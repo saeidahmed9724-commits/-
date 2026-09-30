@@ -450,28 +450,34 @@ export default function App() {
     Boolean(player2.name);
 
   return (
-    <div className="min-h-screen bg-[#EBE7DF] text-[#171717] flex justify-center items-start sm:py-6 selection:bg-[#FFD166] selection:text-[#171717] font-['Cairo',sans-serif]">
-      <div className="w-full max-w-[430px] min-h-screen sm:min-h-[844px] bg-[#F5F3EE] sm:rounded-[36px] sm:shadow-2xl sm:border-[6px] sm:border-[#171717] overflow-y-auto flex flex-col relative">
-        {/* Top Header */}
-        <Header
-          scoreP1={player1.score}
-          scoreP2={player2.score}
-          nameP1={player1.name}
-          nameP2={player2.name}
-          roundNumber={roundNumber}
-          categoryName={gamePhase === 'PLAYING' || gamePhase === 'ROUND_REVEAL' ? (lang === 'ar' ? currentCategory.nameAr : currentCategory.nameEn) : undefined}
-          categoryIcon={gamePhase === 'PLAYING' || gamePhase === 'ROUND_REVEAL' ? currentCategory.icon : undefined}
-          soundEnabled={soundEnabled}
-          onToggleSound={() => setSoundEnabled(!soundEnabled)}
-          onOpenRules={() => setIsRulesOpen(true)}
-          onRestartMatch={handleBackToHome}
-          lang={lang}
-          onToggleLang={() => setLang(lang === 'ar' ? 'en' : 'ar')}
-          showScore={isMatchActive}
-        />
+    <div className="min-h-screen bg-[#070D1E] text-slate-100 flex justify-center items-start sm:py-6 selection:bg-amber-400 selection:text-slate-900 font-['Cairo',sans-serif] relative overflow-x-hidden">
+      {/* Subtle Atmospheric Ambient Glow (Deep Blue & Purple) */}
+      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[650px] h-[320px] bg-gradient-to-b from-blue-600/10 via-purple-600/5 to-transparent blur-3xl pointer-events-none" />
+
+      {/* Main Mobile App Container */}
+      <div className="w-full max-w-[440px] min-h-screen sm:min-h-[860px] bg-[#0F172A] sm:rounded-[36px] sm:shadow-2xl sm:border sm:border-slate-800/80 overflow-y-auto flex flex-col relative z-10">
+        {/* Top Header (shown on gameplay, lobby, setup, and reveal screens) */}
+        {gamePhase !== 'HOME' && (
+          <Header
+            scoreP1={player1.score}
+            scoreP2={player2.score}
+            nameP1={player1.name}
+            nameP2={player2.name}
+            roundNumber={roundNumber}
+            categoryName={gamePhase === 'PLAYING' || gamePhase === 'ROUND_REVEAL' ? (lang === 'ar' ? currentCategory.nameAr : currentCategory.nameEn) : undefined}
+            categoryIcon={gamePhase === 'PLAYING' || gamePhase === 'ROUND_REVEAL' ? currentCategory.icon : undefined}
+            soundEnabled={soundEnabled}
+            onToggleSound={() => setSoundEnabled(!soundEnabled)}
+            onOpenRules={() => setIsRulesOpen(true)}
+            onRestartMatch={handleBackToHome}
+            lang={lang}
+            onToggleLang={() => setLang(lang === 'ar' ? 'en' : 'ar')}
+            showScore={isMatchActive}
+          />
+        )}
 
         {/* Main Content Area */}
-        <main className="flex-1 flex flex-col justify-start items-center py-2 px-3 w-full">
+        <main className={`flex-1 flex flex-col justify-start items-center w-full ${gamePhase === 'HOME' ? 'p-0' : 'py-2 px-3'}`}>
         {/* 1. HOME SCREEN */}
         {gamePhase === 'HOME' && (
           <HomeScreen
@@ -484,6 +490,8 @@ export default function App() {
             onPlayWithAI={handlePlayWithAI}
             onOpenRules={() => setIsRulesOpen(true)}
             lang={lang}
+            soundEnabled={soundEnabled}
+            onToggleSound={() => setSoundEnabled(!soundEnabled)}
           />
         )}
 

@@ -151,32 +151,35 @@ function getExpandedQueries(rawQuery: string): string[] {
 
 app.get('/api/search-images', async (req, res) => {
   const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  const offset = parseInt(req.query.offset as string) || 0;
+  const limit = Math.min(parseInt(req.query.limit as string) || 60, 100);
+
   if (!query) {
-    return res.json({ results: [] });
+    return res.json({ results: [], hasMore: false });
   }
 
-  const cacheKey = query.toLowerCase();
+  const cacheKey = `${query.toLowerCase()}_off${offset}_lim${limit}`;
   const cached = imageSearchCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-    return res.json({ results: cached.data });
+    return res.json({ results: cached.data, hasMore: cached.data.length >= limit });
   }
 
   const searchQueries = getExpandedQueries(query);
   const results: SearchImageResult[] = [];
   const seenUrls = new Set<string>();
 
-  // Fetch for each query until we have enough high quality results
+  // Fetch for each query until we have enough high quality results (up to 60+ images)
   for (const q of searchQueries) {
-    if (results.length >= 20) break;
+    if (results.length >= limit) break;
 
     try {
       // 1. Wikimedia Commons API
       const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
         q
-      )}&gsrnamespace=6&gsrlimit=20&prop=imageinfo&iiprop=url|size&iiurlwidth=500&format=json&origin=*`;
+      )}&gsrnamespace=6&gsrlimit=${Math.min(limit, 60)}&gsroffset=${offset}&prop=imageinfo&iiprop=url|size&iiurlwidth=500&format=json&origin=*`;
       const commonsRes = await fetch(commonsUrl, {
         headers: { 'User-Agent': 'GuessWhoGame/1.0 (educational-game; contact: info@example.com)' },
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(6000),
       });
 
       if (commonsRes.ok) {
@@ -213,10 +216,11 @@ app.get('/api/search-images', async (req, res) => {
       console.error('Commons search error for', q, err);
     }
 
-    // 2. Openverse API fallback or enrichment if results < 12
-    if (results.length < 12) {
+    // 2. Openverse API fallback or enrichment if results < limit
+    if (results.length < limit) {
       try {
-        const openverseUrl = `https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}&page_size=15`;
+        const pageNum = Math.floor(offset / 30) + 1;
+        const openverseUrl = `https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}&page_size=30&page=${pageNum}`;
         const ovRes = await fetch(openverseUrl, {
           headers: { 'User-Agent': 'GuessWhoGame/1.0' },
           signal: AbortSignal.timeout(4000),
@@ -246,7 +250,7 @@ app.get('/api/search-images', async (req, res) => {
 
   // Cache results
   imageSearchCache.set(cacheKey, { timestamp: Date.now(), data: results });
-  return res.json({ results });
+  return res.json({ results, hasMore: results.length >= 20 });
 });
 
 const server = http.createServer(app);

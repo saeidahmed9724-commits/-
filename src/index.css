@@ -1,49 +1,269 @@
 @import "tailwindcss";
 
 :root {
-  --bg-main: #F5F3EE;
-  --text-main: #171717;
-  --purple-main: #6C5CE7;
-  --pink-main: #FF5C8A;
-  --mint-main: #4ED7B0;
-  --yellow-main: #FFD166;
-  --border-main: #E5E1D8;
+  --bg-deep: #0B132B;
+  --bg-surface: #0F172A;
+  --bg-card: #1E293B;
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --primary-blue: #2563EB;
+  --primary-gold: #F59E0B;
+  --primary-purple: #7C3AED;
+  --accent-emerald: #10B981;
+  --accent-rose: #EF4444;
 }
 
 body {
-  background-color: #F5F3EE;
-  color: #171717;
+  margin: 0;
+  padding: 0;
   font-family: 'Cairo', system-ui, -apple-system, sans-serif;
-  background-image: radial-gradient(#D6D1C4 1px, transparent 1px);
-  background-size: 24px 24px;
+  color: #F8FAFC;
+  background-color: #070D1E;
+  background-image: 
+    radial-gradient(ellipse at 50% 0%, #172554 0%, #0B132B 45%, #030712 100%);
+  background-attachment: fixed;
+  background-size: cover;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* 3D Playing Card Perspective */
-.perspective-1000 {
-  perspective: 1000px;
+/* Modern Game App Shell */
+.game-app-shell {
+  background: #0F172A;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 
+    0 25px 60px -15px rgba(0, 0, 0, 0.6),
+    0 0 40px rgba(37, 99, 235, 0.12);
+  border-radius: 36px;
 }
 
-.preserve-3d {
-  transform-style: preserve-3d;
+.btn-hero-start {
+  background: linear-gradient(180deg, #FFB800 0%, #EA580C 100%);
+  color: #FFFFFF;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 0 #9A3412, 0 10px 24px rgba(234, 88, 12, 0.35);
+  border-top: 1px solid rgba(255, 255, 255, 0.45);
+  transition: all 0.12s ease-in-out;
+}
+.btn-hero-start:hover {
+  filter: brightness(1.05);
+}
+.btn-hero-start:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #9A3412, 0 3px 8px rgba(234, 88, 12, 0.35);
 }
 
-.backface-hidden {
-  backface-visibility: hidden;
+.btn-hero-multiplayer {
+  background: linear-gradient(180deg, #A855F7 0%, #7E22CE 100%);
+  color: #FFFFFF;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 0 #581C87, 0 10px 24px rgba(126, 34, 206, 0.35);
+  border-top: 1px solid rgba(255, 255, 255, 0.35);
+  transition: all 0.12s ease-in-out;
+}
+.btn-hero-multiplayer:hover {
+  filter: brightness(1.05);
+}
+.btn-hero-multiplayer:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #581C87, 0 3px 8px rgba(126, 34, 206, 0.35);
 }
 
-.rotate-y-180 {
-  transform: rotateY(180deg);
+.btn-hero-white {
+  background: #FFFFFF;
+  color: #0F172A;
+  box-shadow: 0 3px 0 #CBD5E1, 0 6px 16px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  transition: all 0.12s ease-in-out;
+}
+.btn-hero-white:hover {
+  background: #F8FAFC;
+}
+.btn-hero-white:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #CBD5E1, 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
-/* Card Hover Juice */
-.game-card-shadow {
-  box-shadow: 0 10px 25px -5px rgba(23, 23, 23, 0.08), 0 8px 10px -6px rgba(23, 23, 23, 0.04);
+/* Elevated Content Card */
+.game-card-surface {
+  background: #1E293B;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+  border-radius: 24px;
 }
 
-.game-card-shadow-lg {
-  box-shadow: 0 20px 35px -8px rgba(23, 23, 23, 0.12), 0 10px 15px -5px rgba(23, 23, 23, 0.05);
+/* Subtle Tactile Game Buttons (Modern, mature, not childish) */
+.btn-premium-gold {
+  background: linear-gradient(180deg, #FBBF24 0%, #F59E0B 100%);
+  color: #0F172A;
+  box-shadow: 0 4px 0 #B45309, 0 8px 18px rgba(245, 158, 11, 0.28);
+  border-top: 1px solid rgba(255, 255, 255, 0.4);
+  transition: all 0.12s ease-in-out;
+}
+.btn-premium-gold:hover {
+  filter: brightness(1.04);
+}
+.btn-premium-gold:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #B45309, 0 3px 8px rgba(245, 158, 11, 0.28);
 }
 
-.game-card-shadow-active {
-  box-shadow: 0 0 0 4px #FFD166, 0 15px 30px -5px rgba(23, 23, 23, 0.12);
+.btn-premium-blue {
+  background: linear-gradient(180deg, #3B82F6 0%, #2563EB 100%);
+  color: #FFFFFF;
+  box-shadow: 0 4px 0 #1D4ED8, 0 8px 18px rgba(37, 99, 235, 0.3);
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.12s ease-in-out;
+}
+.btn-premium-blue:hover {
+  filter: brightness(1.04);
+}
+.btn-premium-blue:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #1D4ED8, 0 3px 8px rgba(37, 99, 235, 0.3);
+}
+
+.btn-premium-purple {
+  background: linear-gradient(180deg, #8B5CF6 0%, #7C3AED 100%);
+  color: #FFFFFF;
+  box-shadow: 0 4px 0 #5B21B6, 0 8px 18px rgba(124, 58, 237, 0.3);
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.12s ease-in-out;
+}
+.btn-premium-purple:hover {
+  filter: brightness(1.04);
+}
+.btn-premium-purple:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #5B21B6, 0 3px 8px rgba(124, 58, 237, 0.3);
+}
+
+.btn-premium-surface {
+  background: #1E293B;
+  color: #F8FAFC;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 3px 0 #0F172A, 0 6px 14px rgba(0, 0, 0, 0.25);
+  transition: all 0.12s ease-in-out;
+}
+.btn-premium-surface:hover {
+  background: #28354D;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.btn-premium-surface:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #0F172A, 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.btn-premium-icon {
+  background: #1E293B;
+  color: #F8FAFC;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  transition: all 0.12s ease-in-out;
+}
+.btn-premium-icon:hover {
+  background: #334155;
+}
+.btn-premium-icon:active {
+  transform: scale(0.95);
+}
+
+/* Answer Buttons */
+.btn-ans-yes {
+  background: linear-gradient(180deg, #10B981 0%, #059669 100%);
+  color: #FFFFFF;
+  box-shadow: 0 3px 0 #047857, 0 6px 14px rgba(16, 185, 129, 0.25);
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.1s ease-in-out;
+}
+.btn-ans-yes:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #047857;
+}
+
+.btn-ans-no {
+  background: linear-gradient(180deg, #F43F5E 0%, #E11D48 100%);
+  color: #FFFFFF;
+  box-shadow: 0 3px 0 #BE123C, 0 6px 14px rgba(244, 63, 94, 0.25);
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.1s ease-in-out;
+}
+.btn-ans-no:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #BE123C;
+}
+
+.btn-ans-sometimes {
+  background: linear-gradient(180deg, #FBBF24 0%, #F59E0B 100%);
+  color: #0F172A;
+  box-shadow: 0 3px 0 #B45309, 0 6px 14px rgba(245, 158, 11, 0.25);
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.1s ease-in-out;
+}
+.btn-ans-sometimes:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #B45309;
+}
+
+.btn-ans-not-sure {
+  background: #334155;
+  color: #F8FAFC;
+  box-shadow: 0 3px 0 #1E293B, 0 6px 14px rgba(0, 0, 0, 0.2);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.1s ease-in-out;
+}
+.btn-ans-not-sure:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #1E293B;
+}
+
+.btn-premium-orange {
+  background: linear-gradient(180deg, #FB923C 0%, #EA580C 100%);
+  color: #FFFFFF;
+  box-shadow: 0 4px 0 #C2410C, 0 8px 18px rgba(234, 88, 12, 0.3);
+  border-top: 1px solid rgba(255, 255, 255, 0.35);
+  transition: all 0.12s ease-in-out;
+}
+.btn-premium-orange:hover {
+  filter: brightness(1.04);
+}
+.btn-premium-orange:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #C2410C, 0 3px 8px rgba(234, 88, 12, 0.3);
+}
+
+/* Backward-compatible aliases mapped to the modern design system */
+.game-main-shell {
+  background: #1E293B;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+  border-radius: 28px;
+}
+.btn-3d-purple {
+  background: linear-gradient(180deg, #8B5CF6 0%, #7C3AED 100%);
+  color: #FFFFFF;
+  box-shadow: 0 4px 0 #5B21B6, 0 8px 18px rgba(124, 58, 237, 0.3);
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.12s ease-in-out;
+}
+.btn-3d-yellow {
+  background: linear-gradient(180deg, #FBBF24 0%, #F59E0B 100%);
+  color: #0F172A;
+  box-shadow: 0 4px 0 #B45309, 0 8px 18px rgba(245, 158, 11, 0.28);
+  border-top: 1px solid rgba(255, 255, 255, 0.4);
+  transition: all 0.12s ease-in-out;
+}
+.btn-3d-circle {
+  border-radius: 9999px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+/* Animations */
+@keyframes soft-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.02); }
+}
+
+.animate-soft-pulse {
+  animation: soft-pulse 3s infinite ease-in-out;
 }

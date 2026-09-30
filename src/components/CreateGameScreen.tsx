@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { CATEGORIES } from '../data/categories';
 import { CategoryDefinition, GameMode } from '../types/game';
 import { sound } from '../utils/audio';
-import { ArrowLeft, User, ArrowRight, Sparkles } from 'lucide-react';
+import { ArrowLeft, User, Play, Sparkles } from 'lucide-react';
+import { GameLogoBanner } from './GameLogoBanner';
 
 interface CreateGameScreenProps {
   mode: GameMode;
@@ -46,8 +47,8 @@ export const CreateGameScreen: React.FC<CreateGameScreenProps> = ({
   };
 
   return (
-    <div className="w-full max-w-md mx-auto py-2 sm:py-4 px-4 animate-scale-up space-y-3.5 pb-4">
-      {/* Top Bar: Back & Logo */}
+    <div className="w-full max-w-md mx-auto py-2 px-3 animate-scale-up space-y-4 pb-6 select-none">
+      {/* Top Bar: Back & Mini Logo */}
       <div className="flex items-center justify-between">
         <button
           type="button"
@@ -55,37 +56,34 @@ export const CreateGameScreen: React.FC<CreateGameScreenProps> = ({
             sound.playCardFlip();
             onBack();
           }}
-          className="inline-flex items-center gap-1.5 text-xs font-black text-slate-600 hover:text-[#171717] bg-white px-3 py-1.5 rounded-full border border-[#E8E4DA] cursor-pointer shadow-2xs active:scale-95"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white bg-slate-800/80 px-3.5 py-1.5 rounded-xl border border-slate-700 cursor-pointer active:scale-95 transition-colors"
         >
           <ArrowLeft className={`w-3.5 h-3.5 ${lang === 'ar' ? 'rotate-180' : ''}`} />
           <span>{lang === 'ar' ? 'رجوع' : 'Back'}</span>
         </button>
 
-        <div className="flex items-center gap-1 text-xs font-black text-[#6C5CE7]">
-          <span>🎮</span>
-          <span>{lang === 'ar' ? 'مين في إيدي؟' : "Who's In My Hand?"}</span>
-        </div>
+        <GameLogoBanner size="sm" className="max-w-[100px]" />
       </div>
 
-      {/* Main Card */}
-      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#E8E4DA] game-card-shadow-lg space-y-4">
-        {/* Title */}
+      {/* Main Elevated Card Surface */}
+      <div className="game-card-surface p-5 sm:p-6 space-y-5 border border-slate-700/60">
+        {/* Header Title (Clean, Modern Typography) */}
         <div className="text-center space-y-1">
-          <h2 className="text-2xl font-black text-[#171717] tracking-tight">
-            {lang === 'ar' ? 'إعداد اللعبة الجديدة' : 'Set Up New Game'}
+          <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            {lang === 'ar' ? 'إعداد لعبة جديدة' : 'Game Setup'}
           </h2>
-          <p className="text-xs text-slate-500 font-bold">
+          <p className="text-xs sm:text-sm text-slate-400 font-bold">
             {lang === 'ar'
-              ? 'اختر التصنيف وأسماء اللاعبين للبدء'
+              ? 'اختر تصنيف الجولة وأسماء اللاعبين للبدء'
               : 'Choose category and enter player names'}
           </p>
         </div>
 
         <form onSubmit={handleCreate} className="space-y-4">
-          {/* Name Inputs */}
-          <div className="space-y-2.5">
+          {/* Player Name Input Fields */}
+          <div className="space-y-3">
             <div>
-              <label className="block text-xs font-bold text-slate-500 mb-1">
+              <label className="block text-xs font-bold text-slate-300 mb-1 px-1">
                 {lang === 'ar' ? 'اسمك' : 'Your Name'}
               </label>
               <div className="relative">
@@ -95,15 +93,15 @@ export const CreateGameScreen: React.FC<CreateGameScreenProps> = ({
                   value={playerName}
                   onChange={(e) => setPlayerName(e.target.value)}
                   placeholder={lang === 'ar' ? 'اكتب اسمك هنا...' : 'Enter your name...'}
-                  className="w-full bg-[#FAF8F5] border border-[#E8E4DA] focus:border-[#6C5CE7] rounded-2xl px-4 py-3 text-sm font-black text-[#171717] focus:outline-none transition-colors"
+                  className="w-full h-12 bg-[#0F172A] border border-slate-700 focus:border-blue-500 rounded-xl ps-4 pe-10 text-sm font-bold text-white placeholder:text-slate-500 focus:outline-none transition-colors"
                 />
-                <User className="w-4 h-4 text-slate-400 absolute end-3.5 top-3.5" />
+                <User className="w-4 h-4 text-slate-500 absolute end-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
 
             {mode === 'PASS_AND_PLAY' && (
               <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1">
+                <label className="block text-xs font-bold text-slate-300 mb-1 px-1">
                   {lang === 'ar' ? 'اسم خصمك' : 'Opponent Name'}
                 </label>
                 <div className="relative">
@@ -113,22 +111,22 @@ export const CreateGameScreen: React.FC<CreateGameScreenProps> = ({
                     value={opponentName}
                     onChange={(e) => setOpponentName(e.target.value)}
                     placeholder={lang === 'ar' ? 'اكتب اسم خصمك هنا...' : 'Enter opponent name...'}
-                    className="w-full bg-[#FAF8F5] border border-[#E8E4DA] focus:border-[#FF5C8A] rounded-2xl px-4 py-3 text-sm font-black text-[#171717] focus:outline-none transition-colors"
+                    className="w-full h-12 bg-[#0F172A] border border-slate-700 focus:border-purple-500 rounded-xl ps-4 pe-10 text-sm font-bold text-white placeholder:text-slate-500 focus:outline-none transition-colors"
                   />
-                  <User className="w-4 h-4 text-slate-400 absolute end-3.5 top-3.5" />
+                  <User className="w-4 h-4 text-slate-500 absolute end-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
               </div>
             )}
           </div>
 
-          {/* Broad Category Selection: 4x2 Grid */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-black text-[#171717] flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-[#FFD166]" />
-                <span>{lang === 'ar' ? 'اختر تصنيف اللعبة' : 'Choose Category'}</span>
+          {/* Broad Category Selection: Modern 2-Column Grid */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                <span>{lang === 'ar' ? 'تصنيف الجولة' : 'Category'}</span>
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
               </span>
-              <span className="text-[11px] font-bold text-[#6C5CE7]">
+              <span className="text-[11px] font-bold text-amber-400 bg-amber-400/10 px-2.5 py-0.5 rounded-full border border-amber-400/20">
                 {selectedCategory.nameAr}
               </span>
             </div>
@@ -136,6 +134,8 @@ export const CreateGameScreen: React.FC<CreateGameScreenProps> = ({
             <div className="grid grid-cols-2 gap-2">
               {CATEGORIES.map((cat) => {
                 const isSelected = selectedCatId === cat.id;
+                const itemCount = cat.presetItems.length;
+
                 return (
                   <button
                     key={cat.id}
@@ -144,19 +144,24 @@ export const CreateGameScreen: React.FC<CreateGameScreenProps> = ({
                       sound.playCardFlip();
                       setSelectedCatId(cat.id);
                     }}
-                    className={`p-3 rounded-2xl text-start transition-all cursor-pointer flex items-center gap-2.5 border active:scale-95 ${
+                    className={`p-3 rounded-2xl flex items-center gap-2.5 transition-all cursor-pointer text-start active:scale-95 ${
                       isSelected
-                        ? 'bg-[#FFD166] border-2 border-[#171717] text-[#171717] shadow-sm font-black'
-                        : 'bg-[#FAF8F5] border-[#E8E4DA] hover:border-slate-400 text-slate-700 font-bold'
+                        ? 'bg-amber-500/15 border-2 border-amber-500 text-white shadow-md'
+                        : 'bg-[#0F172A] hover:bg-slate-800/80 border border-slate-800 text-slate-300'
                     }`}
                   >
-                    <span className="text-2xl drop-shadow-xs">{cat.icon}</span>
-                    <div className="overflow-hidden">
-                      <div className="text-xs font-black tracking-tight leading-tight truncate">
+                    {/* Category Icon */}
+                    <div className="w-9 h-9 rounded-xl bg-slate-800/90 border border-slate-700/80 flex items-center justify-center text-xl shrink-0">
+                      {cat.icon}
+                    </div>
+
+                    {/* Category Name & Count */}
+                    <div className="min-w-0 flex-1">
+                      <div className={`text-xs font-bold truncate ${isSelected ? 'text-amber-300' : 'text-slate-200'}`}>
                         {lang === 'ar' ? cat.nameAr : cat.nameEn}
                       </div>
-                      <div className="text-[10px] text-slate-500 font-normal truncate">
-                        {cat.presetItems.length} عناصر
+                      <div className="text-[10px] font-medium text-slate-500">
+                        {lang === 'ar' ? `${itemCount} عناصر` : `${itemCount} items`}
                       </div>
                     </div>
                   </button>
@@ -165,14 +170,14 @@ export const CreateGameScreen: React.FC<CreateGameScreenProps> = ({
             </div>
           </div>
 
-          {/* Bottom Solid Purple Button */}
+          {/* Primary CTA Button: Modern, High-Contrast */}
           <div className="pt-2">
             <button
               type="submit"
-              className="w-full h-14 bg-[#6C5CE7] hover:bg-[#5b4bc4] text-white font-black rounded-2xl text-base flex items-center justify-center gap-2 shadow-lg shadow-[#6C5CE7]/25 transition-all cursor-pointer active:scale-98"
+              className="w-full h-14 btn-premium-gold rounded-2xl font-black text-base sm:text-lg flex items-center justify-center gap-2.5 cursor-pointer shadow-lg active:scale-98"
             >
-              <span>{lang === 'ar' ? 'بدء اللعبة' : 'Start Game'}</span>
-              <ArrowRight className={`w-4 h-4 ${lang === 'ar' ? 'rotate-180' : ''}`} />
+              <Play className="w-4 h-4 fill-slate-900 text-slate-900" />
+              <span>{lang === 'ar' ? 'بدء اللعبة' : 'Start Match'}</span>
             </button>
           </div>
         </form>

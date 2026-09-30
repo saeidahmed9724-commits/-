@@ -48,35 +48,35 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
 
   return (
     <div className="w-full max-w-md mx-auto py-4 sm:py-6 px-4 text-center animate-scale-up space-y-4">
-      <h2 className="text-3xl sm:text-4xl font-black text-[#171717] tracking-tight">
+      <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
         {lang === 'ar' ? 'نهاية المباراة! 🏆' : 'GAME OVER! 🏆'}
       </h2>
 
       {/* Main Score Box */}
-      <div className="bg-white border-2 border-[#171717] rounded-3xl p-5 sm:p-6 game-card-shadow-lg space-y-4">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-[#FFD166] text-[#171717] border-2 border-[#171717] rounded-full text-sm font-black shadow-xs">
-          <Crown className="w-4 h-4" />
+      <div className="game-card-surface border border-slate-700/60 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4">
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-amber-400 text-slate-950 rounded-full text-sm font-black shadow-sm">
+          <Crown className="w-4 h-4 fill-slate-950" />
           <span>{lang === 'ar' ? `البطل: ${winner.name}!` : `Winner: ${winner.name}!`}</span>
         </div>
 
         {/* Scores */}
         <div className="grid grid-cols-2 gap-3 py-1">
           {/* Winner */}
-          <div className="p-3.5 bg-[#F5F3EE] rounded-2xl border-2 border-[#171717] text-center">
-            <div className="text-xs font-black text-[#6C5CE7] uppercase tracking-wider mb-0.5 truncate">
+          <div className="p-3.5 bg-[#0F172A] rounded-2xl border border-amber-500/50 text-center shadow-inner">
+            <div className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-0.5 truncate">
               {winner.name}
             </div>
-            <div className="text-5xl font-black text-[#171717] font-mono tabular-nums">
+            <div className="text-5xl font-black text-white font-mono tabular-nums">
               {winner.score}
             </div>
           </div>
 
           {/* Loser */}
-          <div className="p-3.5 bg-[#F5F3EE] rounded-2xl border border-[#E5E1D8] text-center">
-            <div className="text-xs font-black text-[#FF5C8A] uppercase tracking-wider mb-0.5 truncate">
+          <div className="p-3.5 bg-[#0F172A] rounded-2xl border border-slate-700/80 text-center">
+            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5 truncate">
               {loser.name}
             </div>
-            <div className="text-5xl font-black text-slate-400 font-mono tabular-nums">
+            <div className="text-5xl font-black text-slate-500 font-mono tabular-nums">
               {loser.score}
             </div>
           </div>
@@ -90,9 +90,9 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
               sound.playTurnChime();
               onPlayAgain();
             }}
-            className="w-full h-14 bg-[#6C5CE7] hover:bg-[#5b4bc4] text-white font-black rounded-2xl text-base flex items-center justify-center gap-2 shadow-lg shadow-[#6C5CE7]/25 transition-all cursor-pointer active:scale-98"
+            className="w-full h-14 btn-premium-gold text-slate-950 font-black rounded-2xl text-base flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer active:scale-98"
           >
-            <RotateCcw className="w-5 h-5" />
+            <RotateCcw className="w-5 h-5 text-slate-950" />
             <span>{lang === 'ar' ? 'لعب مباراة جديدة' : 'Play Again'}</span>
           </button>
 
@@ -102,7 +102,7 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
               sound.playCardFlip();
               onBackToHome();
             }}
-            className="w-full h-12 bg-white hover:bg-slate-50 text-[#171717] font-black rounded-2xl border-2 border-[#171717] flex items-center justify-center gap-2 text-sm transition-all cursor-pointer active:scale-98"
+            className="w-full h-12 btn-premium-surface text-slate-300 font-bold rounded-2xl flex items-center justify-center gap-2 text-sm transition-all cursor-pointer active:scale-98"
           >
             <Home className="w-4 h-4" />
             <span>{lang === 'ar' ? 'العودة للرئيسية' : 'Back to Home'}</span>

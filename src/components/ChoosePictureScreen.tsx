@@ -141,101 +141,101 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
 
       {/* Top Bar with Category & Game Badge */}
       <div className="flex items-center justify-between text-xs font-black">
-        <div className="bg-white px-3 py-1 rounded-full border border-[#E8E4DA] flex items-center gap-1.5 shadow-2xs">
+        <div className="bg-[#1E293B] px-3.5 py-1.5 rounded-xl border border-slate-700 flex items-center gap-1.5 shadow-sm">
           <span>{category.icon}</span>
-          <span className="text-[#171717]">{lang === 'ar' ? category.nameAr : category.nameEn}</span>
+          <span className="text-slate-200">{lang === 'ar' ? category.nameAr : category.nameEn}</span>
         </div>
 
-        <div className="flex items-center gap-1 text-[#6C5CE7]">
+        <div className="flex items-center gap-1.5 text-blue-400 font-bold">
           <span>🎮</span>
-          <span>{lang === 'ar' ? 'مين في إيدي؟' : "Who's In My Hand?"}</span>
+          <span>{lang === 'ar' ? 'إيه اللي معايا؟' : 'What Do I Have?'}</span>
         </div>
       </div>
 
       {isWaitingForRemoteOpponent ? (
-        <div className="bg-white rounded-3xl p-8 border border-[#E8E4DA] game-card-shadow-lg space-y-4 text-center">
-          <div className="w-16 h-16 rounded-full bg-[#4ED7B0]/20 text-[#0F6F54] border-2 border-[#0F6F54] flex items-center justify-center mx-auto text-2xl font-black">
+        <div className="game-card-surface p-8 space-y-4 text-center border border-slate-700/60">
+          <div className="w-16 h-16 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mx-auto text-2xl font-black shadow-inner">
             ✓
           </div>
 
-          <h3 className="text-2xl font-black text-[#171717]">
+          <h3 className="text-2xl font-black text-white tracking-tight">
             {lang === 'ar' ? 'تم قفل وتأمين الصورة! 🔒' : 'Picture Locked! 🔒'}
           </h3>
 
-          <p className="text-xs sm:text-sm text-slate-600 font-bold max-w-xs mx-auto">
+          <p className="text-xs sm:text-sm text-slate-400 font-bold max-w-xs mx-auto leading-relaxed">
             {lang === 'ar'
               ? `صورتك لـ ${opponentName} محفوظة بسريّة تامة. بانتظار أن يختار هو صورتك...`
               : `Picture securely locked for ${opponentName}. Waiting for them to pick yours...`}
           </p>
 
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#FFD166] text-[#171717] rounded-full text-xs font-black border border-[#171717]">
-            <span className="w-2 h-2 rounded-full bg-[#171717] animate-ping" />
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-400 text-slate-900 rounded-xl text-xs font-black shadow-sm">
+            <span className="w-2.5 h-2.5 rounded-full bg-slate-900 animate-ping" />
             <span>{lang === 'ar' ? 'مزامنة مباشرة...' : 'Live Syncing...'}</span>
           </div>
         </div>
       ) : (
-        <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#E8E4DA] game-card-shadow-lg space-y-4">
+        <div className="game-card-surface p-5 sm:p-6 space-y-4 border border-slate-700/60">
           {/* Header Title with Secret Warning */}
           <div className="text-center space-y-1">
-            <div className="inline-flex items-center gap-1 text-[11px] font-black text-[#FF5C8A] bg-[#FF5C8A]/10 px-3 py-1 rounded-full mb-1">
-              <Lock className="w-3 h-3" />
+            <div className="inline-flex items-center gap-1 text-[11px] font-black text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1 rounded-full mb-1">
+              <Lock className="w-3 h-3 text-rose-400" />
               <span>{lang === 'ar' ? 'سرية تامة' : 'Top Secret'}</span>
             </div>
 
-            <h2 className="text-2xl font-black text-[#171717] tracking-tight">
+            <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
               {lang === 'ar' ? `اختر صورة لـ ${opponentName}` : `Choose for ${opponentName}`}
             </h2>
-            <p className="text-xs text-slate-500 font-bold">
+            <p className="text-xs text-slate-400 font-bold">
               {lang === 'ar'
-                ? `أنت تختار الصورة التي سيحاول ${opponentName} تخمينها!`
+                ? `أنت تختار الصورة التي سيحاول ${opponentName} استنتاجها وتخمينها!`
                 : `You are choosing the secret image ${opponentName} must deduce!`}
             </p>
           </div>
 
-          {/* Primary Action: In-Game Image Search Button (Prominent Hero) */}
+          {/* Primary Action: In-Game Image Search Button (Modern Premium Purple) */}
           <button
             type="button"
             onClick={() => openSearchWithQuery('')}
-            className="w-full p-4 bg-gradient-to-r from-[#6C5CE7] to-[#8070F6] hover:from-[#5b4bc4] hover:to-[#6C5CE7] text-white rounded-2xl flex items-center justify-between shadow-md shadow-[#6C5CE7]/25 cursor-pointer transition-all active:scale-98 group border border-[#6C5CE7]"
+            className="w-full h-16 btn-premium-purple rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all active:scale-98 group"
           >
             <div className="flex items-center gap-3 text-start">
-              <div className="w-11 h-11 rounded-xl bg-white/20 flex items-center justify-center text-xl shrink-0 group-hover:scale-110 transition-transform">
+              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-xl shrink-0 group-hover:scale-105 transition-transform">
                 🔍
               </div>
               <div>
-                <div className="text-sm font-black flex items-center gap-1.5">
+                <div className="text-sm font-black flex items-center gap-1.5 leading-tight text-white">
                   <span>{lang === 'ar' ? 'اختار صورة (بحث مباشر)' : 'Choose Picture (Live Search)'}</span>
-                  <span className="text-[10px] bg-[#FFD166] text-[#171717] px-2 py-0.5 rounded-full font-black">
-                    {lang === 'ar' ? 'جديد ⚡' : 'NEW ⚡'}
+                  <span className="text-[10px] bg-amber-400 text-slate-950 px-2 py-0.5 rounded-full font-black">
+                    {lang === 'ar' ? 'فوري ⚡' : 'INSTANT ⚡'}
                   </span>
                 </div>
-                <div className="text-[11px] text-white/80 font-bold">
+                <div className="text-[11px] text-purple-200 font-medium">
                   {lang === 'ar'
-                    ? 'ابحث عن أي شيء (مثل Pizza أو برجر) واختره فوراً'
-                    : 'Search for anything (e.g. Pizza, Burger) inside the game'}
+                    ? 'ابحث عن أي شيء (مثل Pizza أو برجر) واختره بضغطة'
+                    : 'Search for anything inside the game with 1 tap'}
                 </div>
               </div>
             </div>
 
-            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
               <ArrowRight className={`w-4 h-4 text-white ${lang === 'ar' ? 'rotate-180' : ''}`} />
             </div>
           </button>
 
           {/* Selected Picture Preview Card or Fallback State */}
-          <div className="bg-[#FAF8F5] rounded-2xl p-4 border border-[#E8E4DA] flex flex-col items-center justify-center text-center relative">
+          <div className="bg-[#0F172A] rounded-2xl p-4 border border-slate-700/80 flex flex-col items-center justify-center text-center relative shadow-inner">
             {selectedImage ? (
               <div className="w-full flex flex-col items-center space-y-3">
                 <button
                   type="button"
                   onClick={() => setSelectedImage(null)}
                   title="Remove"
-                  className="absolute top-2.5 end-2.5 w-7 h-7 rounded-full bg-white text-slate-500 hover:text-[#171717] border border-[#E8E4DA] flex items-center justify-center cursor-pointer shadow-2xs"
+                  className="absolute top-2.5 end-2.5 w-8 h-8 rounded-xl bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center cursor-pointer border border-slate-700"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-4 h-4" />
                 </button>
 
-                <div className="w-36 h-36 rounded-2xl overflow-hidden bg-white border border-[#E8E4DA] flex items-center justify-center p-2 shadow-sm">
+                <div className="w-36 h-36 rounded-2xl overflow-hidden bg-[#1E293B] border border-slate-700 flex items-center justify-center p-2 shadow-md">
                   <img
                     src={selectedImage}
                     alt={selectedTitle}
@@ -244,8 +244,8 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
                 </div>
 
                 <div className="w-full max-w-xs space-y-1.5">
-                  <div className="text-[11px] font-black text-emerald-600 flex items-center justify-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5 fill-emerald-500 text-white" />
+                  <div className="text-[11px] font-black text-emerald-400 flex items-center justify-center gap-1">
+                    <CheckCircle2 className="w-4 h-4 fill-emerald-500 text-slate-900" />
                     <span>{lang === 'ar' ? 'الصورة جاهزة للتثبيت' : 'Image Ready to Lock'}</span>
                   </div>
 
@@ -254,13 +254,13 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
                     value={selectedTitle}
                     onChange={(e) => setSelectedTitle(e.target.value)}
                     placeholder={lang === 'ar' ? 'اسم العنصر...' : 'Item name...'}
-                    className="w-full bg-white border border-[#E8E4DA] focus:border-[#6C5CE7] rounded-xl px-3 py-2 text-xs font-black text-center text-[#171717] focus:outline-none"
+                    className="w-full bg-[#1E293B] border border-slate-700 focus:border-purple-500 rounded-xl px-3 py-2 text-xs font-bold text-center text-white focus:outline-none"
                   />
 
                   <button
                     type="button"
                     onClick={() => openSearchWithQuery(selectedTitle)}
-                    className="text-[11px] font-black text-[#6C5CE7] hover:underline flex items-center justify-center gap-1 mx-auto cursor-pointer pt-0.5"
+                    className="text-[11px] font-bold text-purple-400 hover:text-purple-300 flex items-center justify-center gap-1 mx-auto cursor-pointer pt-0.5"
                   >
                     <RefreshCw className="w-3 h-3" />
                     <span>{lang === 'ar' ? 'تغيير الصورة بالبحث' : 'Change image via search'}</span>
@@ -270,15 +270,15 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
             ) : (
               <div
                 onClick={() => openSearchWithQuery('')}
-                className="py-6 flex flex-col items-center justify-center text-slate-500 cursor-pointer group"
+                className="py-6 flex flex-col items-center justify-center text-slate-400 cursor-pointer group"
               >
-                <div className="w-12 h-12 rounded-2xl bg-[#6C5CE7]/10 text-[#6C5CE7] flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
-                  <Search className="w-6 h-6" />
+                <div className="w-14 h-14 rounded-2xl bg-purple-500/15 border border-purple-500/30 text-purple-400 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform shadow-xs">
+                  <Search className="w-7 h-7" />
                 </div>
-                <span className="text-xs font-black text-[#171717]">
+                <span className="text-sm font-bold text-slate-200">
                   {lang === 'ar' ? 'اضغط هنا للبحث عن صورة' : 'Tap here to search for an image'}
                 </span>
-                <span className="text-[11px] text-slate-400 font-bold mt-0.5">
+                <span className="text-[11px] text-slate-400 font-medium mt-0.5">
                   {lang === 'ar' ? 'دون الحاجة لحفظ صور على هاتفك' : 'No need to save pictures to your device'}
                 </span>
               </div>
@@ -290,9 +290,9 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="flex-1 py-2 px-3 bg-white hover:bg-slate-50 text-slate-700 text-xs font-black rounded-xl border border-[#E8E4DA] flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+              className="flex-1 py-2.5 px-3 btn-premium-surface text-slate-300 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
             >
-              <Upload className="w-3.5 h-3.5 text-slate-500" />
+              <Upload className="w-3.5 h-3.5 text-slate-400" />
               <span>{lang === 'ar' ? 'رفع من الهاتف' : 'Upload File'}</span>
             </button>
 
@@ -311,21 +311,21 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
                     }
                   }
                 } catch {
-                  alert(lang === 'ar' ? 'الصق الصورة بالضغط على Ctrl+V' : 'Press Ctrl+V to paste');
+                  // Fallback
                 }
               }}
-              className="flex-1 py-2 px-3 bg-white hover:bg-slate-50 text-slate-700 text-xs font-black rounded-xl border border-[#E8E4DA] flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+              className="flex-1 py-2.5 px-3 btn-premium-surface text-slate-300 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
             >
-              <Clipboard className="w-3.5 h-3.5 text-slate-500" />
+              <Clipboard className="w-3.5 h-3.5 text-slate-400" />
               <span>{lang === 'ar' ? 'لصق (Ctrl+V)' : 'Paste Image'}</span>
             </button>
           </div>
 
           {/* Quick Presets Grid from Category */}
           {category.presetItems.length > 0 && (
-            <div className="pt-2 border-t border-[#E8E4DA]">
-              <div className="text-[11px] font-black text-slate-500 mb-2 flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-[#FFD166]" />
+            <div className="pt-2 border-t border-slate-700/60">
+              <div className="text-[11px] font-bold text-slate-400 mb-2 flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-amber-400" />
                 <span>
                   {lang === 'ar' ? `أو اختر عنصراً جاهزاً من (${category.nameAr}):` : 'Or pick a preset:'}
                 </span>
@@ -337,14 +337,14 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
                     key={item.id}
                     type="button"
                     onClick={() => handleSelectPreset(item)}
-                    className="p-1.5 bg-[#FAF8F5] hover:bg-[#FFD166]/30 border border-[#E8E4DA] rounded-xl text-center transition-all cursor-pointer flex flex-col items-center active:scale-95"
+                    className="p-2 bg-[#0F172A] hover:bg-slate-800 border border-slate-700/80 hover:border-amber-400/80 rounded-xl text-center transition-all cursor-pointer flex flex-col items-center active:scale-95 shadow-sm"
                   >
                     <img
                       src={item.imageUrl}
                       alt={item.nameAr}
                       className="w-9 h-9 object-contain mb-1"
                     />
-                    <span className="text-[10px] font-black text-[#171717] truncate max-w-full">
+                    <span className="text-[10px] font-bold text-slate-300 truncate max-w-full">
                       {lang === 'ar' ? item.nameAr : item.nameEn}
                     </span>
                   </button>
@@ -353,13 +353,13 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
             </div>
           )}
 
-          {/* Bottom Confirm Button (Large Thumb Target) */}
+          {/* Bottom Confirm Button: Big Modern Tactile Gold Button */}
           <div className="pt-2">
             <button
               type="button"
               disabled={!selectedImage}
               onClick={handleConfirm}
-              className="w-full h-14 bg-[#6C5CE7] hover:bg-[#5b4bc4] disabled:opacity-40 text-white font-black rounded-2xl text-base flex items-center justify-center gap-2 shadow-lg shadow-[#6C5CE7]/25 transition-all cursor-pointer active:scale-98"
+              className="w-full h-14 btn-premium-gold disabled:opacity-40 rounded-2xl font-black text-base sm:text-lg flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer active:scale-98"
             >
               <span>{lang === 'ar' ? 'تثبيت الصورة السرية 🔒' : 'Lock Secret Picture 🔒'}</span>
               <ArrowRight className={`w-4 h-4 ${lang === 'ar' ? 'rotate-180' : ''}`} />

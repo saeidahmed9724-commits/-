@@ -55,17 +55,23 @@ export const CATEGORY_SUGGESTIONS: Record<string, Array<{ labelAr: string; label
 /**
  * Searches images using the backend proxy endpoint, with direct client fallback to Wikimedia Commons
  */
-export async function searchImages(query: string): Promise<SearchImageItem[]> {
+export async function searchImages(
+  query: string,
+  offset: number = 0,
+  limit: number = 60
+): Promise<{ items: SearchImageItem[]; hasMore: boolean }> {
   const trimmed = query.trim();
-  if (!trimmed) return [];
+  if (!trimmed) return { items: [], hasMore: false };
 
   // Try backend proxy first
   try {
-    const res = await fetch(`/api/search-images?q=${encodeURIComponent(trimmed)}`);
+    const res = await fetch(
+      `/api/search-images?q=${encodeURIComponent(trimmed)}&offset=${offset}&limit=${limit}`
+    );
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data.results) && data.results.length > 0) {
-        return data.results;
+        return { items: data.results, hasMore: Boolean(data.hasMore) };
       }
     }
   } catch (e) {
@@ -76,7 +82,7 @@ export async function searchImages(query: string): Promise<SearchImageItem[]> {
   try {
     const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
       trimmed
-    )}&gsrnamespace=6&gsrlimit=24&prop=imageinfo&iiprop=url|size&iiurlwidth=500&format=json&origin=*`;
+    )}&gsrnamespace=6&gsrlimit=${Math.min(limit, 60)}&gsroffset=${offset}&prop=imageinfo&iiprop=url|size&iiurlwidth=500&format=json&origin=*`;
     const res = await fetch(commonsUrl);
     if (res.ok) {
       const data = await res.json();
@@ -110,11 +116,11 @@ export async function searchImages(query: string): Promise<SearchImageItem[]> {
           });
         }
       }
-      return results;
+      return { items: results, hasMore: results.length >= 20 };
     }
   } catch (err) {
     console.error('Direct commons search failed', err);
   }
 
-  return [];
+  return { items: [], hasMore: false };
 }
