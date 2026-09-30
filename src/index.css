@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+:root {
+  --bg-main: #F5F3EE;
+  --text-main: #171717;
+  --purple-main: #6C5CE7;
+  --pink-main: #FF5C8A;
+  --mint-main: #4ED7B0;
+  --yellow-main: #FFD166;
+  --border-main: #E5E1D8;
+}
+
+body {
+  background-color: #F5F3EE;
+  color: #171717;
+  font-family: 'Cairo', system-ui, -apple-system, sans-serif;
+  background-image: radial-gradient(#D6D1C4 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* 3D Playing Card Perspective */
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+
+.backface-hidden {
+  backface-visibility: hidden;
+}
+
+.rotate-y-180 {
+  transform: rotateY(180deg);
+}
+
+/* Card Hover Juice */
+.game-card-shadow {
+  box-shadow: 0 10px 25px -5px rgba(23, 23, 23, 0.08), 0 8px 10px -6px rgba(23, 23, 23, 0.04);
+}
+
+.game-card-shadow-lg {
+  box-shadow: 0 20px 35px -8px rgba(23, 23, 23, 0.12), 0 10px 15px -5px rgba(23, 23, 23, 0.05);
+}
+
+.game-card-shadow-active {
+  box-shadow: 0 0 0 4px #FFD166, 0 15px 30px -5px rgba(23, 23, 23, 0.12);
+}

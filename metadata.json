@@ -1,0 +1,6 @@
+{
+  "name": "Guess Your Hidden Picture | خمن صورتك المخفية",
+  "description": "لعبة تنافسية لشخصين تعتمد على طرح الأسئلة بالتبادل، استنتاج الصورة المخفية، وسرعة التخمين مع كشف الصورتين واحتساب النقاط.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
