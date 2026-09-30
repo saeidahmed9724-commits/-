@@ -52,6 +52,12 @@ interface OnlineRoom {
     guesserName: string;
     guessText: string;
   };
+  pendingQuestion?: {
+    id: string;
+    question: string;
+    askedByRole: 'host' | 'guest';
+    answeredByRole: 'host' | 'guest';
+  };
   winnerRole?: 'host' | 'guest';
   correctGuess?: string;
 }
@@ -80,6 +86,7 @@ function broadcastRoomState(room: OnlineRoom) {
         host: { name: room.host.name, score: room.host.score, isReady: Boolean(room.hostChosenForGuest) },
         guest: room.guest ? { name: room.guest.name, score: room.guest.score, isReady: Boolean(room.guestChosenForHost) } : undefined,
         pendingGuess: room.pendingGuess,
+        pendingQuestion: room.pendingQuestion,
         // Secret picture held by Host (secret to host unless REVEAL):
         mySecretCard: isReveal
           ? room.guestChosenForHost
@@ -108,6 +115,7 @@ function broadcastRoomState(room: OnlineRoom) {
         host: { name: room.host.name, score: room.host.score, isReady: Boolean(room.hostChosenForGuest) },
         guest: { name: room.guest.name, score: room.guest.score, isReady: Boolean(room.guestChosenForHost) },
         pendingGuess: room.pendingGuess,
+        pendingQuestion: room.pendingQuestion,
         // Secret picture held by Guest (secret to guest unless REVEAL):
         mySecretCard: isReveal
           ? room.hostChosenForGuest
@@ -242,19 +250,14 @@ wss.on('connection', (ws) => {
         const room = rooms.get(userRoomCode);
         if (!room || room.phase !== 'PLAYING') return;
 
-        const newQ = {
+        room.pendingQuestion = {
           id: 'q-' + Date.now(),
           question: msg.question,
           askedByRole: userRole,
           answeredByRole: userRole === 'host' ? ('guest' as const) : ('host' as const),
-          answer: 'PENDING' as any,
-          timestamp: Date.now(),
         };
 
-        // Broadcast question to both so respondent can answer
-        const payload = JSON.stringify({ type: 'QUESTION_PENDING', questionRecord: newQ });
-        room.host.ws?.send(payload);
-        room.guest?.ws?.send(payload);
+        broadcastRoomState(room);
       }
 
       // 6. Answer Question
@@ -274,7 +277,8 @@ wss.on('connection', (ws) => {
         };
 
         room.questions.unshift(record);
-        // Switch turn to respondent
+        room.pendingQuestion = undefined;
+        // Switch turn to respondent to ask their own question!
         room.activePlayerRole = userRole;
         broadcastRoomState(room);
       }
@@ -323,8 +327,9 @@ wss.on('connection', (ws) => {
           broadcastRoomState(room);
         } else {
           // Opponent indicated: Wrong guess!
-          // No penalty / loss of match: game continues normally
+          // No penalty: turn passes to opponent so they can ask their question!
           room.pendingGuess = undefined;
+          room.activePlayerRole = guesserRole === 'host' ? 'guest' : 'host';
           const rejectionPayload = JSON.stringify({
             type: 'GUESS_REJECTED',
             guesserRole,

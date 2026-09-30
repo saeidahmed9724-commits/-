@@ -21,6 +21,12 @@ export interface OnlineRoomData {
     guesserName: string;
     guessText: string;
   };
+  pendingQuestion?: {
+    id: string;
+    question: string;
+    askedByRole: 'host' | 'guest';
+    answeredByRole: 'host' | 'guest';
+  };
   winnerRole?: 'host' | 'guest';
   correctGuess?: string;
   host: { name: string; score: number; isReady: boolean };

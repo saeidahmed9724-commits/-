@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Player, PlayerChoice, QuestionRecord, CategoryDefinition, AnswerType } from '../types/game';
 import { sound } from '../utils/audio';
 import { isCorrectGuess } from '../utils/normalize';
@@ -14,9 +14,11 @@ import {
   History,
   ChevronDown,
   Sparkles,
-  MessageSquare,
   ThumbsUp,
   ThumbsDown,
+  Smartphone,
+  ArrowRight,
+  BookOpen,
 } from 'lucide-react';
 
 interface BattleArenaProps {
@@ -81,10 +83,13 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
   const [selectedAnswer, setSelectedAnswer] = useState<AnswerType | null>(null);
   const [answerNote, setAnswerNote] = useState<string>('');
 
+  // Pass and Play Handover Interstitial State:
+  // 'NONE' | 'OPPONENT_TO_ANSWER' | 'NEXT_PLAYER_TO_ASK'
+  const [passAndPlayHandoff, setPassAndPlayHandoff] = useState<'NONE' | 'OPPONENT_TO_ANSWER' | 'NEXT_PLAYER_TO_ASK'>('NONE');
+
   // Guess Modal State
   const [isGuessModalOpen, setIsGuessModalOpen] = useState<boolean>(false);
   const [guessInput, setGuessInput] = useState<string>('');
-  const [isWaitingForApproval, setIsWaitingForApproval] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Local pending guess for Pass & Play handover
@@ -95,8 +100,9 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
     targetCard: PlayerChoice;
   } | null>(null);
 
-  // Question History Bottom Sheet
+  // Question History Bottom Sheet & Tabs
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
+  const [historyTab, setHistoryTab] = useState<'MY_CLUES' | 'OPPONENT_CLUES' | 'ALL'>('MY_CLUES');
 
   // Privacy hide toggle for opponent card when sitting side-by-side
   const [hideOpponentCard, setHideOpponentCard] = useState<boolean>(false);
@@ -105,18 +111,42 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
 
   const activePlayer = activePlayerId === player1.id ? player1 : player2;
   const opponentPlayer = activePlayerId === player1.id ? player2 : player1;
+
+  // Is it the viewer's turn to ask or guess?
   const isMyTurn = isOnlineMatch
     ? (onlineRole === 'host' ? activePlayerId === player1.id : activePlayerId === player2.id)
     : viewerId === activePlayerId;
 
   const viewerIsP1 = viewerId === player1.id;
+  const viewerName = viewerIsP1 ? player1.name : player2.name;
   const opponentName = viewerIsP1 ? player2.name : player1.name;
   const visibleOpponentCard = viewerIsP1 ? p2Card : p1Card;
-  const mySecretCardTitle = viewerIsP1 ? p1Card.title : p2Card.title;
 
-  const lastQuestion = questions.length > 0 ? questions[questions.length - 1] : null;
+  // Separate Deduction Tracks:
+  // 1. My Clues: questions asked by viewer about viewer's own hidden picture
+  const myClues = questions.filter((q) => q.askedByPlayerId === viewerId);
+  const latestMyClue = myClues.length > 0 ? myClues[0] : null;
 
-  // Ask Question handler
+  // 2. Opponent Clues: questions asked by opponent about opponent's own hidden picture
+  const opponentClues = questions.filter((q) => q.askedByPlayerId !== viewerId);
+  const latestOpponentClue = opponentClues.length > 0 ? opponentClues[0] : null;
+
+  // Bot Turn Simulation: When active player is Bot, Bot asks a question about Bot's picture
+  useEffect(() => {
+    if (isBotMatch && activePlayerId === player2.id && !currentPendingQuestion) {
+      const timer = setTimeout(() => {
+        const pool = lang === 'ar' ? category.suggestedQuestionsAr : category.suggestedQuestionsEn;
+        const randomQ = pool.length > 0
+          ? pool[Math.floor(Math.random() * pool.length)]
+          : (lang === 'ar' ? 'هل صورتي حاجة بتتاكل؟' : 'Is my item food?');
+        sound.playTurnChime();
+        setPendingQuestionLocal(randomQ);
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [isBotMatch, activePlayerId, currentPendingQuestion, category, lang]);
+
+  // Ask Question Handler
   const handleAsk = (qText: string) => {
     if (!qText.trim()) return;
     sound.playTurnChime();
@@ -132,10 +162,16 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
     setSelectedAnswer(null);
     setAnswerNote('');
 
-    // If bot match: Bot answers manually with an optional fun note
+    // If Pass & Play: Trigger phone handoff so opponent can answer
+    if (!isOnlineMatch && !isBotMatch) {
+      setPassAndPlayHandoff('OPPONENT_TO_ANSWER');
+      return;
+    }
+
+    // If Bot Match & Human asked: Bot answers automatically with realistic answer + optional fun note
     if (isBotMatch && activePlayerId === player1.id) {
       setTimeout(() => {
-        const target = p2Card.title.toLowerCase();
+        const target = p1Card.title.toLowerCase();
         const q = qText.toLowerCase();
         let botAns: AnswerType = 'YES';
         let botNote = '';
@@ -143,7 +179,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
         if (q.includes('حلو') || q.includes('sweet') || q.includes('سكر') || q.includes('dessert')) {
           const isSweet = ['كيك', 'دونات', 'تفاحة', 'آيس', 'شوكولاتة', 'cake', 'donut', 'apple'].some((w) => target.includes(w));
           botAns = isSweet ? 'YES' : 'NO';
-          botNote = isSweet ? 'جداً وسكرها عالي!' : 'مش حاجة حلوة خالص';
+          botNote = isSweet ? 'حلوة ومسكرة جداً!' : 'مش حاجة حلوة';
         } else if (q.includes('حار') || q.includes('ساخن') || q.includes('hot')) {
           const isHot = ['بيتزا', 'برجر', 'فراخ', 'شاورما', 'باستا', 'taco', 'burger', 'pizza'].some((w) => target.includes(w));
           botAns = isHot ? 'YES' : 'NO';
@@ -164,7 +200,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
     }
   };
 
-  // Opponent answers question manually with chosen answer + optional note
+  // Submit Answer to Question
   const handleSubmitAnswer = () => {
     if (!currentPendingQuestion || !selectedAnswer) return;
 
@@ -181,16 +217,21 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
       return;
     }
 
+    // Offline / Pass & Play / Bot Match:
     onAddQuestionAndAnswer(currentPendingQuestion, selectedAnswer, note);
     setPendingQuestionLocal(null);
     setSelectedAnswer(null);
     setAnswerNote('');
 
-    const nextId = activePlayerId === player1.id ? player2.id : player1.id;
-    setViewerId(nextId);
+    // In Pass & Play: The respondent (who is holding the phone) now becomes the active player to ask!
+    if (!isOnlineMatch && !isBotMatch) {
+      const nextActiveId = activePlayerId === player1.id ? player2.id : player1.id;
+      setViewerId(nextActiveId);
+      setPassAndPlayHandoff('NONE');
+    }
   };
 
-  // Submit guess: The player submits, and the OPPONENT decides if it is correct or not!
+  // Submit Guess: Player guesses their own card
   const handleSubmitGuess = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanGuess = guessInput.trim();
@@ -200,27 +241,26 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
 
     if (isOnlineMatch && onOnlineGuess) {
       onOnlineGuess(cleanGuess);
-      setIsWaitingForApproval(true);
       return;
     }
 
-    // Bot Match: Bot evaluates and decides
+    // Bot Match: Bot verifies
     if (isBotMatch) {
-      const targetCard = p1Card; // Bot picked for player 1
+      const targetCard = p1Card;
       const isCorrect = isCorrectGuess(cleanGuess, targetCard.title);
       if (isCorrect) {
         sound.playVictoryFanfare();
         onCorrectGuess(player1.id, cleanGuess);
       } else {
         sound.playWrongBuzzer();
-        setToastMessage(lang === 'ar' ? `❌ البوت يقول: التخمين غير صحيح ("${cleanGuess}"). تستمر اللعبة!` : `❌ Bot says: Wrong guess ("${cleanGuess}"). Game continues!`);
+        setToastMessage(lang === 'ar' ? `❌ البوت يقول: التخمين غير صحيح ("${cleanGuess}"). تستمر اللعبة!` : `❌ Bot says: Incorrect guess ("${cleanGuess}"). Game continues!`);
         setTimeout(() => setToastMessage(null), 3000);
         onWrongGuess(player1.id, cleanGuess);
       }
       return;
     }
 
-    // Pass and Play: Prompt the opponent who chose the card to judge!
+    // Pass and Play: Prompt the opponent who chose the card to judge
     const targetCard = activePlayerId === player1.id ? p1Card : p2Card;
     setPendingGuessLocal({
       guesserId: activePlayerId,
@@ -230,7 +270,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
     });
   };
 
-  // Opponent resolves the guess (Correct / Wrong)
+  // Resolve Guess locally in Pass & Play
   const handleResolveLocalGuess = (isCorrect: boolean) => {
     if (!pendingGuessLocal) return;
 
@@ -250,10 +290,13 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
       );
       setTimeout(() => setToastMessage(null), 3500);
       onWrongGuess(guesserId, guessText);
+      // Turn passes to opponent
+      const nextId = guesserId === player1.id ? player2.id : player1.id;
+      setViewerId(nextId);
     }
   };
 
-  // Check if I need to judge an online opponent's guess
+  // Check if I am judging an online opponent's guess
   const amIOnlineJudge = isOnlineMatch && pendingGuessRemote && (
     (onlineRole === 'host' && pendingGuessRemote.guesserRole === 'guest') ||
     (onlineRole === 'guest' && pendingGuessRemote.guesserRole === 'host')
@@ -303,7 +346,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
         </div>
       </div>
 
-      {/* 2. TURN CALLOUT BANNER (Dynamic player names) */}
+      {/* 2. TURN CALLOUT BANNER (Clearly stating whose turn it is to ask about their card) */}
       <div
         className={`rounded-2xl p-2.5 text-center text-xs font-black flex items-center justify-center gap-2 border transition-all ${
           isMyTurn
@@ -314,15 +357,19 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
         <span className={`w-2 h-2 rounded-full ${isMyTurn ? 'bg-[#4ED7B0] animate-ping' : 'bg-[#FFD166]'}`} />
         <span>
           {isMyTurn
-            ? (lang === 'ar' ? `دورك يا ${activePlayer.name} 🎯` : `Your turn, ${activePlayer.name} 🎯`)
-            : (lang === 'ar' ? `دور ${activePlayer.name} ⏳` : `${activePlayer.name}'s turn ⏳`)}
+            ? (lang === 'ar'
+                ? `دورك يا ${activePlayer.name} 🎯 (اسأل عن صورتك المخفية أو خمّنها)`
+                : `Your turn, ${activePlayer.name} 🎯 (Ask about your card or guess)`)
+            : (lang === 'ar'
+                ? `دور ${activePlayer.name} ⏳ (يسأل عن صورته المخفية)`
+                : `${activePlayer.name}'s turn ⏳`)}
         </span>
       </div>
 
-      {/* 3. HERO SECTION: THE TWO PHYSICAL GAME CARDS */}
-      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-[#E8E4DA] game-card-shadow-lg relative">
-        <div className="grid grid-cols-2 gap-3 items-center relative">
-          {/* CARD 1: صورتك المخفية (Mystery Card) */}
+      {/* 3. HERO SECTION: THE TWO DISTINCT DEDUCTION CARDS */}
+      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-[#E8E4DA] game-card-shadow-lg space-y-3 relative">
+        <div className="grid grid-cols-2 gap-3 items-start relative">
+          {/* CARD 1: صورتك المخفية (Mystery Card + My Deduction Track) */}
           <div className="flex flex-col items-center text-center">
             <div className="text-[11px] font-black text-[#6C5CE7] mb-1.5 flex items-center gap-1">
               <span>{lang === 'ar' ? 'صورتك المخفية' : 'YOUR CARD'}</span>
@@ -333,26 +380,45 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
               <span className="font-mono font-black text-5xl sm:text-6xl text-[#FFD166] drop-shadow-md animate-pulse">
                 ?
               </span>
-              <span className="absolute bottom-2.5 text-[9px] font-mono tracking-widest text-slate-300 font-bold uppercase">
+              <span className="absolute bottom-2 text-[9px] font-mono tracking-widest text-slate-300 font-bold uppercase">
                 {lang === 'ar' ? 'ممنوع تشوفها' : 'HIDDEN'}
               </span>
+            </div>
+
+            {/* Micro Deduction Track Pill for My Card */}
+            <div className="mt-2 w-full p-2 bg-[#F5F3EE] rounded-xl border border-[#E8E4DA] text-[10px] space-y-0.5 text-start">
+              <div className="font-black text-[#6C5CE7] flex items-center justify-between">
+                <span>{lang === 'ar' ? 'مسار استنتاجك:' : 'Your deduction:'}</span>
+                <span className="font-mono font-bold text-slate-500">{myClues.length} أدلة</span>
+              </div>
+              {latestMyClue ? (
+                <div className="text-slate-700 font-bold truncate">
+                  💡 "{latestMyClue.question}" ←{' '}
+                  <span className="font-black text-[#0F6F54]">
+                    {latestMyClue.answer === 'YES' ? 'نعم ✓' : latestMyClue.answer === 'NO' ? 'لا ✕' : latestMyClue.answer === 'SOMETIMES' ? 'أحيانًا ~' : 'مش متأكد ?'}
+                  </span>
+                </div>
+              ) : (
+                <div className="text-slate-400 font-medium italic">
+                  {lang === 'ar' ? 'لم تسأل أي سؤال بعد' : 'No clues yet'}
+                </div>
+              )}
             </div>
           </div>
 
           {/* CENTER "VS" BADGE */}
-          <div className="absolute top-1/2 start-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex items-center justify-center pointer-events-none">
+          <div className="absolute top-[35%] start-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex items-center justify-center pointer-events-none">
             <div className="w-10 h-10 rounded-full bg-white border-2 border-[#171717] text-[#171717] font-black text-xs flex items-center justify-center shadow-md">
               <span className="font-mono tracking-tight text-[11px]">VS</span>
             </div>
           </div>
 
-          {/* CARD 2: صورة الخصم (Visible Card) */}
+          {/* CARD 2: صورة الخصم (Visible Card + Opponent Deduction Track) */}
           <div className="flex flex-col items-center text-center">
             <div className="text-[11px] font-black text-[#FF5C8A] mb-1.5 flex items-center gap-1 justify-center w-full">
               <span className="truncate max-w-[100px]">
                 {lang === 'ar' ? `صورة ${opponentName}` : `${opponentName}'s Card`}
               </span>
-              {/* Privacy Shield Button for pass-and-play */}
               {!isOnlineMatch && (
                 <button
                   type="button"
@@ -379,220 +445,292 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                 />
               )}
             </div>
+
+            {/* Micro Deduction Track Pill for Opponent's Card */}
+            <div className="mt-2 w-full p-2 bg-[#FAF8F5] rounded-xl border border-[#E8E4DA] text-[10px] space-y-0.5 text-start">
+              <div className="font-black text-[#FF5C8A] flex items-center justify-between">
+                <span>{lang === 'ar' ? `استنتاج ${opponentName}:` : `${opponentName}'s deduction:`}</span>
+                <span className="font-mono font-bold text-slate-500">{opponentClues.length} أسئلة</span>
+              </div>
+              {latestOpponentClue ? (
+                <div className="text-slate-700 font-bold truncate">
+                  💡 "{latestOpponentClue.question}" ←{' '}
+                  <span className="font-black text-slate-900">
+                    {latestOpponentClue.answer === 'YES' ? 'نعم ✓' : latestOpponentClue.answer === 'NO' ? 'لا ✕' : latestOpponentClue.answer === 'SOMETIMES' ? 'أحيانًا ~' : 'مش متأكد ?'}
+                  </span>
+                </div>
+              ) : (
+                <div className="text-slate-400 font-medium italic">
+                  {lang === 'ar' ? 'لم يسأل خصمك بعد' : 'No clues yet'}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-
-        {/* LATEST CLUE CHIP (Under the cards for quick context, with Note if present) */}
-        {lastQuestion && (
-          <div className="mt-3 pt-2.5 border-t border-[#E8E4DA] space-y-1 text-[11px] text-slate-600">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1 truncate max-w-[230px]">
-                <span className="font-bold text-slate-400">{lang === 'ar' ? 'آخر سؤال:' : 'Last clue:'}</span>
-                <span className="font-black text-[#171717] truncate">"{lastQuestion.question}"</span>
-              </div>
-              <div className="shrink-0 font-black">
-                {lastQuestion.answer === 'YES' && <span className="text-[#0F6F54] bg-[#4ED7B0]/20 px-2 py-0.5 rounded-full">نعم ✓</span>}
-                {lastQuestion.answer === 'NO' && <span className="text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full">لا ✕</span>}
-                {lastQuestion.answer === 'SOMETIMES' && <span className="text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">أحياناً ~</span>}
-                {lastQuestion.answer === 'NOT_SURE' && <span className="text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">مش متأكد ?</span>}
-              </div>
-            </div>
-            {lastQuestion.note && (
-              <div className="text-[10px] text-slate-500 font-bold bg-[#FAF8F5] px-2 py-1 rounded-lg border border-[#E8E4DA]/60 truncate">
-                📝 {lastQuestion.note}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
-      {/* 4. TURN ACTION AREA (BOTTOM POSITIONED FOR 1-HAND ERGONOMICS) */}
+      {/* 4. TURN ACTION ZONE (BOTTOM FOR 1-HAND MOBILE USABILITY) */}
       <div className="bg-white rounded-3xl p-4 border border-[#E8E4DA] game-card-shadow space-y-3">
-        {/* CASE A: PENDING QUESTION (Opponent manually answers + optional note) */}
-        {currentPendingQuestion ? (
-          <div className="p-3.5 bg-[#FFF8E7] border-2 border-[#171717] rounded-2xl space-y-3 animate-fade-in">
-            <div className="text-xs font-black text-[#171717] flex items-center justify-between">
-              <span>{lang === 'ar' ? `سؤال من ${activePlayer.name}:` : `Question from ${activePlayer.name}:`}</span>
-              <span className="text-[#6C5CE7] font-black text-[11px] bg-white px-2 py-0.5 rounded-full border border-[#E8E4DA]">
-                {lang === 'ar' ? `دورك للإجابة يا ${opponentPlayer.name}` : `${opponentPlayer.name}'s turn to answer`}
-              </span>
+        {/* PASS & PLAY HANDOFF INTERSTITIAL (Hand phone to opponent to answer) */}
+        {!isOnlineMatch && !isBotMatch && passAndPlayHandoff === 'OPPONENT_TO_ANSWER' && currentPendingQuestion && (
+          <div className="p-4 bg-[#FFF8E7] border-2 border-[#171717] rounded-2xl text-center space-y-3 animate-scale-up">
+            <div className="w-12 h-12 rounded-2xl bg-[#6C5CE7]/15 text-[#6C5CE7] flex items-center justify-center mx-auto text-2xl">
+              <Smartphone className="w-6 h-6 text-[#6C5CE7]" />
             </div>
-
-            <div className="text-base font-black text-[#171717] bg-white p-3 rounded-xl border border-[#E8E4DA] text-center shadow-2xs">
-              "{currentPendingQuestion}"
+            <div className="space-y-1">
+              <div className="text-xs font-black text-[#6C5CE7] uppercase">
+                {lang === 'ar' ? 'حان وقت الإجابة!' : 'Time to Answer!'}
+              </div>
+              <h4 className="text-base font-black text-[#171717]">
+                {lang === 'ar'
+                  ? `اعطِ الهاتف لـ ${opponentName} ليجيب عن سؤالك!`
+                  : `Hand the phone to ${opponentName} to answer!`}
+              </h4>
+              <p className="text-xs text-slate-500 font-bold">
+                {lang === 'ar'
+                  ? `${viewerName} سأل سؤالاً عن صورته المخفية. ${opponentName} هو من يعرف الإجابة.`
+                  : `${viewerName} asked a question about their card.`}
+              </p>
             </div>
-
-            <div className="text-[11px] font-bold text-slate-500 text-center">
-              {lang === 'ar' ? 'حدد إجابتك بناءً على الصورة التي اخترتها له:' : 'Select your answer based on their secret image:'}
-            </div>
-
-            {/* 4 High-contrast answer buttons with clear selected state */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setSelectedAnswer('YES')}
-                className={`h-12 rounded-xl text-sm font-black border-2 transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
-                  selectedAnswer === 'YES'
-                    ? 'bg-[#4ED7B0] text-[#171717] border-[#171717] ring-3 ring-[#4ED7B0]/50 shadow-md'
-                    : 'bg-white text-[#171717] border-[#E8E4DA] hover:border-[#4ED7B0]'
-                }`}
-              >
-                <Check className="w-4 h-4 stroke-[3] text-[#0F6F54]" />
-                <span>{lang === 'ar' ? 'نعم 🟢' : 'YES 🟢'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedAnswer('NO')}
-                className={`h-12 rounded-xl text-sm font-black border-2 transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
-                  selectedAnswer === 'NO'
-                    ? 'bg-[#FF5C8A] text-white border-[#171717] ring-3 ring-[#FF5C8A]/50 shadow-md'
-                    : 'bg-white text-[#171717] border-[#E8E4DA] hover:border-[#FF5C8A]'
-                }`}
-              >
-                <X className="w-4 h-4 stroke-[3] text-rose-600" />
-                <span>{lang === 'ar' ? 'لا 🔴' : 'NO 🔴'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedAnswer('SOMETIMES')}
-                className={`h-12 rounded-xl text-sm font-black border-2 transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
-                  selectedAnswer === 'SOMETIMES'
-                    ? 'bg-[#FFD166] text-[#171717] border-[#171717] ring-3 ring-[#FFD166]/50 shadow-md'
-                    : 'bg-white text-[#171717] border-[#E8E4DA] hover:border-[#FFD166]'
-                }`}
-              >
-                <AlertCircle className="w-4 h-4 text-amber-600" />
-                <span>{lang === 'ar' ? 'أحيانًا 🟡' : 'SOMETIMES 🟡'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedAnswer('NOT_SURE')}
-                className={`h-12 rounded-xl text-sm font-black border-2 transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
-                  selectedAnswer === 'NOT_SURE'
-                    ? 'bg-slate-200 text-[#171717] border-[#171717] ring-3 ring-slate-300 shadow-md'
-                    : 'bg-white text-slate-700 border-[#E8E4DA] hover:border-slate-400'
-                }`}
-              >
-                <HelpCircle className="w-4 h-4 text-slate-500" />
-                <span>{lang === 'ar' ? 'مش متأكد ⚪' : 'NOT SURE ⚪'}</span>
-              </button>
-            </div>
-
-            {/* Optional Note Input */}
-            <div className="space-y-1 pt-1">
-              <label className="text-[11px] font-black text-slate-600 flex items-center gap-1">
-                <span>📝</span>
-                <span>{lang === 'ar' ? 'إضافة ملاحظة — اختياري' : 'Add a note — optional'}</span>
-              </label>
-              <input
-                type="text"
-                value={answerNote}
-                onChange={(e) => setAnswerNote(e.target.value)}
-                placeholder={lang === 'ar' ? 'مثلاً: "بس مش كل الناس بتحبها سخنة"...' : 'e.g. "Only when fresh"...'}
-                className="w-full bg-white border border-[#E8E4DA] focus:border-[#6C5CE7] rounded-xl px-3 py-2 text-xs font-bold text-[#171717] placeholder-slate-400 focus:outline-none"
-              />
-            </div>
-
-            {/* Submit Answer CTA */}
             <button
               type="button"
-              disabled={!selectedAnswer}
-              onClick={handleSubmitAnswer}
-              className="w-full h-12 bg-[#6C5CE7] hover:bg-[#5b4bc4] disabled:opacity-40 text-white font-black rounded-xl text-sm shadow-md transition-all cursor-pointer active:scale-98 flex items-center justify-center gap-2"
+              onClick={() => {
+                const opponentId = viewerIsP1 ? player2.id : player1.id;
+                setViewerId(opponentId);
+                setPassAndPlayHandoff('NONE');
+                sound.playTurnChime();
+              }}
+              className="w-full h-12 bg-[#6C5CE7] hover:bg-[#5b4bc4] text-white font-black rounded-xl text-sm shadow-md transition-all cursor-pointer active:scale-98 flex items-center justify-center gap-2"
             >
-              <span>{lang === 'ar' ? 'إرسال الإجابة ←' : 'Submit Answer →'}</span>
+              <span>{lang === 'ar' ? `أنا ${opponentName}، معي الهاتف وجاهز للإجابة ←` : `I am ${opponentName}, ready ←`}</span>
             </button>
-          </div>
-        ) : (
-          /* CASE B: ACTIVE PLAYER'S TURN TO ASK OR GUESS */
-          <div className="space-y-3">
-            {/* Primary Action Buttons (Thumb Reachable) */}
-            <div className="flex flex-col gap-2.5">
-              {/* BIG GOLD GUESS BUTTON: "أنا عرفت! 🎯" */}
-              <button
-                type="button"
-                onClick={() => {
-                  sound.playTurnChime();
-                  setGuessInput('');
-                  setIsGuessModalOpen(true);
-                }}
-                className="w-full h-14 bg-[#FFD166] hover:bg-[#f5c754] text-[#171717] font-black rounded-2xl border-2 border-[#171717] text-base flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer active:scale-98"
-              >
-                <Lightbulb className="w-5 h-5 fill-[#171717] text-[#171717]" />
-                <span className="text-lg">{lang === 'ar' ? 'أنا عرفت صورتي! 🎯' : 'I Know My Picture! 🎯'}</span>
-              </button>
-
-              {/* QUESTION INPUT + ASK BUTTON */}
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleAsk(questionInput);
-                }}
-                className="flex items-center gap-2"
-              >
-                <input
-                  type="text"
-                  value={questionInput}
-                  onChange={(e) => setQuestionInput(e.target.value)}
-                  placeholder={lang === 'ar' ? 'اسأل سؤالاً (نعم أو لا)...' : 'Ask a Yes/No question...'}
-                  className="flex-1 bg-[#FAF8F5] border border-[#E8E4DA] focus:border-[#6C5CE7] rounded-2xl px-4 py-3.5 text-sm text-[#171717] font-bold placeholder-slate-400 focus:outline-none"
-                />
-
-                <button
-                  type="submit"
-                  disabled={!questionInput.trim()}
-                  className="h-12 px-5 bg-[#6C5CE7] hover:bg-[#5b4bc4] disabled:opacity-40 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-1.5 shadow-md shadow-[#6C5CE7]/25 transition-all cursor-pointer active:scale-95 shrink-0"
-                >
-                  <span>{lang === 'ar' ? 'إرسال' : 'Ask'}</span>
-                  <Send className="w-4 h-4 rtl:rotate-180" />
-                </button>
-              </form>
-            </div>
-
-            {/* Quick Question Suggestions Pills */}
-            {category.suggestedQuestionsAr.length > 0 && (
-              <div className="pt-1">
-                <div className="text-[11px] font-bold text-slate-400 mb-1.5 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-[#FFD166]" />
-                  <span>{lang === 'ar' ? 'اقتراحات سريعة للأسئلة:' : 'Quick question suggestions:'}</span>
-                </div>
-                <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                  {(lang === 'ar' ? category.suggestedQuestionsAr : category.suggestedQuestionsEn).map((q, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => handleAsk(q)}
-                      className="px-3 py-1.5 bg-[#FAF8F5] hover:bg-[#FFD166] text-[#171717] text-xs font-bold rounded-full border border-[#E8E4DA] hover:border-[#171717] whitespace-nowrap transition-all cursor-pointer shrink-0 active:scale-95"
-                    >
-                      {q}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
-        {/* 5. QUESTION HISTORY BOTTOM DRAWER TRIGGER */}
-        <div className="pt-1 border-t border-[#E8E4DA] flex items-center justify-between">
+        {/* CASE A: PENDING QUESTION (Opponent must answer) */}
+        {currentPendingQuestion && passAndPlayHandoff === 'NONE' ? (
+          <div className="p-3.5 bg-[#FFF8E7] border-2 border-[#171717] rounded-2xl space-y-3 animate-fade-in">
+            {/* If I am the one who asked and waiting for opponent in online mode */}
+            {isOnlineMatch && isMyTurn ? (
+              <div className="text-center py-4 space-y-2">
+                <div className="text-sm font-black text-[#171717]">
+                  "{currentPendingQuestion}"
+                </div>
+                <div className="text-xs font-black text-[#6C5CE7] animate-pulse">
+                  ⏳ {lang === 'ar' ? `في انتظار إجابة ${opponentName} عن صورتك...` : `Waiting for ${opponentName}'s answer...`}
+                </div>
+              </div>
+            ) : (
+              /* Answering Controls for Opponent */
+              <>
+                <div className="text-xs font-black text-[#171717] flex items-center justify-between">
+                  <span>
+                    {lang === 'ar'
+                      ? `سؤال من ${activePlayer.name} عن صورته المخفية:`
+                      : `Question from ${activePlayer.name} about their card:`}
+                  </span>
+                  <span className="text-[#6C5CE7] font-black text-[11px] bg-white px-2 py-0.5 rounded-full border border-[#E8E4DA]">
+                    {lang === 'ar' ? `أجب يا ${opponentName}` : `${opponentName} answers`}
+                  </span>
+                </div>
+
+                <div className="text-base font-black text-[#171717] bg-white p-3 rounded-xl border border-[#E8E4DA] text-center shadow-2xs">
+                  "{currentPendingQuestion}"
+                </div>
+
+                {/* Reminder of Secret Card chosen for the asker */}
+                <div className="flex items-center justify-center gap-2 p-1.5 bg-amber-100/60 rounded-xl text-[11px] font-bold text-amber-900 border border-amber-200">
+                  <span className="shrink-0">💡</span>
+                  <span>
+                    {lang === 'ar'
+                      ? `أنت اخترت لـ ${activePlayer.name}: (${visibleOpponentCard.title})`
+                      : `You picked for them: (${visibleOpponentCard.title})`}
+                  </span>
+                </div>
+
+                {/* 4 High-contrast answer buttons with clear selected state */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAnswer('YES')}
+                    className={`h-12 rounded-xl text-sm font-black border-2 transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
+                      selectedAnswer === 'YES'
+                        ? 'bg-[#4ED7B0] text-[#171717] border-[#171717] ring-3 ring-[#4ED7B0]/50 shadow-md'
+                        : 'bg-white text-[#171717] border-[#E8E4DA] hover:border-[#4ED7B0]'
+                    }`}
+                  >
+                    <Check className="w-4 h-4 stroke-[3] text-[#0F6F54]" />
+                    <span>{lang === 'ar' ? 'نعم 🟢' : 'YES 🟢'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAnswer('NO')}
+                    className={`h-12 rounded-xl text-sm font-black border-2 transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
+                      selectedAnswer === 'NO'
+                        ? 'bg-[#FF5C8A] text-white border-[#171717] ring-3 ring-[#FF5C8A]/50 shadow-md'
+                        : 'bg-white text-[#171717] border-[#E8E4DA] hover:border-[#FF5C8A]'
+                    }`}
+                  >
+                    <X className="w-4 h-4 stroke-[3] text-rose-600" />
+                    <span>{lang === 'ar' ? 'لا 🔴' : 'NO 🔴'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAnswer('SOMETIMES')}
+                    className={`h-12 rounded-xl text-sm font-black border-2 transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
+                      selectedAnswer === 'SOMETIMES'
+                        ? 'bg-[#FFD166] text-[#171717] border-[#171717] ring-3 ring-[#FFD166]/50 shadow-md'
+                        : 'bg-white text-[#171717] border-[#E8E4DA] hover:border-[#FFD166]'
+                    }`}
+                  >
+                    <AlertCircle className="w-4 h-4 text-amber-600" />
+                    <span>{lang === 'ar' ? 'أحيانًا 🟡' : 'SOMETIMES 🟡'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAnswer('NOT_SURE')}
+                    className={`h-12 rounded-xl text-sm font-black border-2 transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
+                      selectedAnswer === 'NOT_SURE'
+                        ? 'bg-slate-200 text-[#171717] border-[#171717] ring-3 ring-slate-300 shadow-md'
+                        : 'bg-white text-slate-700 border-[#E8E4DA] hover:border-slate-400'
+                    }`}
+                  >
+                    <HelpCircle className="w-4 h-4 text-slate-500" />
+                    <span>{lang === 'ar' ? 'مش متأكد ⚪' : 'NOT SURE ⚪'}</span>
+                  </button>
+                </div>
+
+                {/* Optional Note Input */}
+                <div className="space-y-1 pt-1">
+                  <label className="text-[11px] font-black text-slate-600 flex items-center gap-1">
+                    <span>📝</span>
+                    <span>{lang === 'ar' ? 'إضافة ملاحظة — اختياري' : 'Add a note — optional'}</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={answerNote}
+                    onChange={(e) => setAnswerNote(e.target.value)}
+                    placeholder={lang === 'ar' ? 'مثلاً: "بس مش كل الناس بتحبها سخنة"...' : 'e.g. "Only when fresh"...'}
+                    className="w-full bg-white border border-[#E8E4DA] focus:border-[#6C5CE7] rounded-xl px-3 py-2 text-xs font-bold text-[#171717] placeholder-slate-400 focus:outline-none"
+                  />
+                </div>
+
+                {/* Submit Answer CTA */}
+                <button
+                  type="button"
+                  disabled={!selectedAnswer}
+                  onClick={handleSubmitAnswer}
+                  className="w-full h-12 bg-[#6C5CE7] hover:bg-[#5b4bc4] disabled:opacity-40 text-white font-black rounded-xl text-sm shadow-md transition-all cursor-pointer active:scale-98 flex items-center justify-center gap-2"
+                >
+                  <span>{lang === 'ar' ? `إرسال الإجابة لـ ${activePlayer.name} ←` : `Send Answer to ${activePlayer.name} →`}</span>
+                </button>
+              </>
+            )}
+          </div>
+        ) : passAndPlayHandoff === 'NONE' ? (
+          /* CASE B: ACTIVE PLAYER'S TURN TO ASK OR GUESS */
+          isMyTurn ? (
+            <div className="space-y-3">
+              {/* Primary Action Buttons (Thumb Reachable) */}
+              <div className="flex flex-col gap-2.5">
+                {/* BIG GOLD GUESS BUTTON: "أنا عرفت! 🎯" */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    sound.playTurnChime();
+                    setGuessInput('');
+                    setIsGuessModalOpen(true);
+                  }}
+                  className="w-full h-14 bg-[#FFD166] hover:bg-[#f5c754] text-[#171717] font-black rounded-2xl border-2 border-[#171717] text-base flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer active:scale-98"
+                >
+                  <Lightbulb className="w-5 h-5 fill-[#171717] text-[#171717]" />
+                  <span className="text-lg">{lang === 'ar' ? 'أنا عرفت صورتي! 🎯' : 'I Know My Picture! 🎯'}</span>
+                </button>
+
+                {/* QUESTION INPUT + ASK BUTTON */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleAsk(questionInput);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <input
+                    type="text"
+                    value={questionInput}
+                    onChange={(e) => setQuestionInput(e.target.value)}
+                    placeholder={lang === 'ar' ? 'اسأل عن صورتك (مثال: هل صورتي بتتاكل؟)...' : 'Ask about your card...'}
+                    className="flex-1 bg-[#FAF8F5] border border-[#E8E4DA] focus:border-[#6C5CE7] rounded-2xl px-4 py-3.5 text-sm text-[#171717] font-bold placeholder-slate-400 focus:outline-none"
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={!questionInput.trim()}
+                    className="h-12 px-5 bg-[#6C5CE7] hover:bg-[#5b4bc4] disabled:opacity-40 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-1.5 shadow-md shadow-[#6C5CE7]/25 transition-all cursor-pointer active:scale-95 shrink-0"
+                  >
+                    <span>{lang === 'ar' ? 'إرسال' : 'Ask'}</span>
+                    <Send className="w-4 h-4 rtl:rotate-180" />
+                  </button>
+                </form>
+              </div>
+
+              {/* Quick Question Suggestions Pills */}
+              {category.suggestedQuestionsAr.length > 0 && (
+                <div className="pt-1">
+                  <div className="text-[11px] font-bold text-slate-400 mb-1.5 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-[#FFD166]" />
+                    <span>{lang === 'ar' ? 'اقتراحات سريعة لأسئلة صورتك:' : 'Suggestions for your card:'}</span>
+                  </div>
+                  <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                    {(lang === 'ar' ? category.suggestedQuestionsAr : category.suggestedQuestionsEn).map((q, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleAsk(q)}
+                        className="px-3 py-1.5 bg-[#FAF8F5] hover:bg-[#FFD166] text-[#171717] text-xs font-bold rounded-full border border-[#E8E4DA] hover:border-[#171717] whitespace-nowrap transition-all cursor-pointer shrink-0 active:scale-95"
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Opponent's turn to ask: Waiting banner */
+            <div className="p-4 bg-slate-50 border border-[#E8E4DA] rounded-2xl text-center space-y-2">
+              <div className="text-xs font-black text-slate-500">
+                ⏳ {lang === 'ar' ? `دور ${activePlayer.name} الآن ليطرح سؤالاً عن صورته المخفية...` : `${activePlayer.name} is thinking of a question...`}
+              </div>
+              <p className="text-[11px] text-slate-400 font-medium">
+                {lang === 'ar'
+                  ? 'بمجرد أن يسأل سؤاله، سيظهر لك لتجيب عنه من خلال صورتك التي اخترتها له.'
+                  : 'Once they ask, you will answer based on their secret card.'}
+              </p>
+            </div>
+          )
+        ) : null}
+
+        {/* 5. QUESTION HISTORY BOTTOM DRAWER TRIGGER & PERSPECTIVE TOGGLE */}
+        <div className="pt-2 border-t border-[#E8E4DA] flex items-center justify-between">
           <button
             type="button"
             onClick={() => {
               sound.playCardFlip();
               setIsHistoryOpen(true);
             }}
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-[#171717] cursor-pointer"
+            className="inline-flex items-center gap-1.5 text-xs font-black text-slate-700 hover:text-[#171717] cursor-pointer"
           >
-            <History className="w-3.5 h-3.5 text-[#6C5CE7]" />
+            <BookOpen className="w-3.5 h-3.5 text-[#6C5CE7]" />
             <span>
-              {lang === 'ar' ? `سجل الأسئلة (${questions.length})` : `Question History (${questions.length})`}
+              {lang === 'ar' ? `سجل الأدلة والملاحظات (${questions.length})` : `Clues & Notes Log (${questions.length})`}
             </span>
           </button>
 
-          {!isOnlineMatch && (
+          {!isOnlineMatch && !isBotMatch && (
             <button
               type="button"
               onClick={() => {
@@ -602,21 +740,21 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
               }}
               className="text-[11px] font-bold text-[#6C5CE7] hover:underline cursor-pointer"
             >
-              {lang === 'ar' ? `تبديل شاشة العرض (دور ${viewerIsP1 ? player2.name : player1.name})` : 'Toggle device perspective'}
+              {lang === 'ar' ? `عرض الهاتف لـ ${viewerIsP1 ? player2.name : player1.name} 🔄` : 'Switch view 🔄'}
             </button>
           )}
         </div>
       </div>
 
-      {/* 6. QUESTION HISTORY BOTTOM SHEET MODAL */}
+      {/* 6. QUESTION HISTORY MODAL (WITH TABS FOR INDEPENDENT DEDUCTION TRACKS) */}
       {isHistoryOpen && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-2xs p-0 sm:p-4 animate-fade-in">
-          <div className="w-full max-w-md bg-white rounded-t-[32px] sm:rounded-3xl p-5 border-2 border-[#171717] shadow-2xl space-y-4 max-h-[80vh] flex flex-col animate-scale-up">
+          <div className="w-full max-w-md bg-white rounded-t-[32px] sm:rounded-3xl p-5 border-2 border-[#171717] shadow-2xl space-y-4 max-h-[82vh] flex flex-col animate-scale-up">
             <div className="flex items-center justify-between border-b border-[#E8E4DA] pb-3">
               <div className="flex items-center gap-2">
-                <History className="w-5 h-5 text-[#6C5CE7]" />
+                <BookOpen className="w-5 h-5 text-[#6C5CE7]" />
                 <h3 className="font-black text-lg text-[#171717]">
-                  {lang === 'ar' ? 'سجل الأسئلة والملاحظات' : 'Questions & Clues Log'}
+                  {lang === 'ar' ? 'سجل الأدلة والاستنتاج' : 'Deduction & Clues Log'}
                 </h3>
               </div>
               <button
@@ -628,15 +766,72 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
               </button>
             </div>
 
+            {/* 3 Clear Tabs for Independent Deductions */}
+            <div className="grid grid-cols-3 gap-1 bg-[#F5F3EE] p-1 rounded-xl text-xs font-black">
+              <button
+                type="button"
+                onClick={() => setHistoryTab('MY_CLUES')}
+                className={`py-2 px-1 rounded-lg transition-all text-center truncate ${
+                  historyTab === 'MY_CLUES'
+                    ? 'bg-white text-[#6C5CE7] shadow-xs'
+                    : 'text-slate-600 hover:text-[#171717]'
+                }`}
+              >
+                {lang === 'ar' ? `صورتك (${myClues.length})` : `My Card (${myClues.length})`}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setHistoryTab('OPPONENT_CLUES')}
+                className={`py-2 px-1 rounded-lg transition-all text-center truncate ${
+                  historyTab === 'OPPONENT_CLUES'
+                    ? 'bg-white text-[#FF5C8A] shadow-xs'
+                    : 'text-slate-600 hover:text-[#171717]'
+                }`}
+              >
+                {lang === 'ar' ? `صورة الخصم (${opponentClues.length})` : `Opponent (${opponentClues.length})`}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setHistoryTab('ALL')}
+                className={`py-2 px-1 rounded-lg transition-all text-center truncate ${
+                  historyTab === 'ALL'
+                    ? 'bg-white text-[#171717] shadow-xs'
+                    : 'text-slate-600 hover:text-[#171717]'
+                }`}
+              >
+                {lang === 'ar' ? `الكل (${questions.length})` : `All (${questions.length})`}
+              </button>
+            </div>
+
+            {/* Clue Records List */}
             <div className="flex-1 overflow-y-auto space-y-2.5 pe-1">
-              {questions.length === 0 ? (
-                <div className="text-center py-10 text-slate-400 font-bold text-xs">
-                  {lang === 'ar' ? 'لم يتم طرح أي سؤال حتى الآن.' : 'No questions asked yet.'}
-                </div>
-              ) : (
-                questions.map((rec) => {
-                  const isP1 = rec.askedByPlayerId === player1.id;
-                  const askerName = isP1 ? player1.name : player2.name;
+              {(() => {
+                const list =
+                  historyTab === 'MY_CLUES'
+                    ? myClues
+                    : historyTab === 'OPPONENT_CLUES'
+                    ? opponentClues
+                    : questions;
+
+                if (list.length === 0) {
+                  return (
+                    <div className="text-center py-10 text-slate-400 font-bold text-xs space-y-1">
+                      <div>{lang === 'ar' ? 'لا توجد أدلة مسجلة هنا بعد.' : 'No clues recorded here yet.'}</div>
+                      <div className="text-[11px] text-slate-400">
+                        {lang === 'ar'
+                          ? 'كل لاعب يجمع أدلته الخاصة بشكل مستقل عن الآخر!'
+                          : 'Each player gathers their own independent clues!'}
+                      </div>
+                    </div>
+                  );
+                }
+
+                return list.map((rec) => {
+                  const isViewerQuestion = rec.askedByPlayerId === viewerId;
+                  const askerName = rec.askedByPlayerId === player1.id ? player1.name : player2.name;
+                  const respondentName = rec.answeredByPlayerId === player1.id ? player1.name : player2.name;
 
                   return (
                     <div
@@ -644,56 +839,55 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                       className="p-3 bg-[#FAF8F5] rounded-2xl border border-[#E8E4DA] text-xs space-y-1.5"
                     >
                       <div className="flex items-center gap-1.5 font-black">
-                        <div
-                          className={`w-5 h-5 rounded-full text-white text-[10px] flex items-center justify-center font-mono ${
-                            isP1 ? 'bg-[#6C5CE7]' : 'bg-[#FF5C8A]'
-                          }`}
-                        >
-                          {isP1 ? '1' : '2'}
-                        </div>
-                        <span className={isP1 ? 'text-[#6C5CE7]' : 'text-[#FF5C8A]'}>
-                          {askerName}:
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] text-white ${
+                          isViewerQuestion ? 'bg-[#6C5CE7]' : 'bg-[#FF5C8A]'
+                        }`}>
+                          {isViewerQuestion
+                            ? (lang === 'ar' ? 'عن صورتك 🔒' : 'Your Card')
+                            : (lang === 'ar' ? `عن صورة ${opponentName} 👤` : `${opponentName}'s Card`)}
                         </span>
-                        <span className="text-[#171717] font-bold truncate">
-                          {rec.question}
+                        <span className="text-[#171717] font-black truncate">
+                          "{rec.question}"
                         </span>
                       </div>
 
-                      <div className="flex items-center justify-between pt-0.5 ps-6 text-[11px]">
-                        <span className="text-slate-400">{lang === 'ar' ? 'الإجابة:' : 'Answer:'}</span>
+                      <div className="flex items-center justify-between pt-0.5 ps-2 text-[11px]">
+                        <span className="text-slate-500 font-bold">
+                          {lang === 'ar' ? `إجابة ${respondentName}:` : `Answer by ${respondentName}:`}
+                        </span>
                         {rec.answer === 'YES' && (
                           <span className="text-[#0F6F54] bg-[#4ED7B0]/20 px-2.5 py-0.5 rounded-full font-black">
-                            {lang === 'ar' ? 'نعم ✓' : 'YES ✓'}
+                            {lang === 'ar' ? 'نعم 🟢' : 'YES 🟢'}
                           </span>
                         )}
                         {rec.answer === 'NO' && (
                           <span className="text-rose-700 bg-rose-100 px-2.5 py-0.5 rounded-full font-black">
-                            {lang === 'ar' ? 'لا ✕' : 'NO ✕'}
+                            {lang === 'ar' ? 'لا 🔴' : 'NO 🔴'}
                           </span>
                         )}
                         {rec.answer === 'SOMETIMES' && (
                           <span className="text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full font-black">
-                            {lang === 'ar' ? 'أحيانًا ~' : 'SOMETIMES ~'}
+                            {lang === 'ar' ? 'أحيانًا 🟡' : 'SOMETIMES 🟡'}
                           </span>
                         )}
                         {rec.answer === 'NOT_SURE' && (
                           <span className="text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-full font-bold">
-                            {lang === 'ar' ? 'مش متأكد ?' : 'NOT SURE ?'}
+                            {lang === 'ar' ? 'مش متأكد ⚪' : 'NOT SURE ⚪'}
                           </span>
                         )}
                       </div>
 
                       {/* Display note if provided by opponent */}
                       {rec.note && (
-                        <div className="ps-6 text-[11px] text-slate-600 bg-white p-2 rounded-xl border border-[#E8E4DA] flex items-start gap-1.5 mt-1">
+                        <div className="ps-2 text-[11px] text-slate-600 bg-white p-2 rounded-xl border border-[#E8E4DA] flex items-start gap-1.5 mt-1">
                           <span className="shrink-0">📝</span>
                           <span className="font-bold italic">"{rec.note}"</span>
                         </div>
                       )}
                     </div>
                   );
-                })
-              )}
+                });
+              })()}
             </div>
 
             <div className="pt-3 border-t border-[#E8E4DA]">
@@ -731,8 +925,8 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
 
             <p className="text-xs text-slate-500 font-bold">
               {lang === 'ar'
-                ? `اكتب تخمينك لعنصرك السري من تصنيف (${category.nameAr}). خصمك الذي اختار الصورة هو من سيؤكد صحة التخمين!`
-                : `Enter your guess for your secret (${category.nameEn}). Your opponent who chose it will verify!`}
+                ? `اكتب تخمينك لعنصرك السري من تصنيف (${category.nameAr}). خصمك الذي اختار لك الصورة هو من سيحكم على التخمين!`
+                : `Enter your guess for your secret (${category.nameEn}). Your opponent will verify!`}
             </p>
 
             <form onSubmit={handleSubmitGuess} className="space-y-4 pt-1">
@@ -815,7 +1009,6 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
 
             {/* The 2 Judgment Decision Buttons */}
             <div className="space-y-2 pt-1">
-              {/* CORRECT BUTTON: 🟢 صح، دي الصورة */}
               <button
                 type="button"
                 onClick={() => handleResolveLocalGuess(true)}
@@ -825,7 +1018,6 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                 <span>{lang === 'ar' ? 'صح، دي الصورة 🟢' : "Correct, that's it! 🟢"}</span>
               </button>
 
-              {/* WRONG BUTTON: 🔴 لا، تخمين غلط */}
               <button
                 type="button"
                 onClick={() => handleResolveLocalGuess(false)}
@@ -836,7 +1028,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
               </button>
             </div>
             <p className="text-[10px] text-slate-400 font-bold">
-              {lang === 'ar' ? 'لا توجد خسارة إذا كان التخمين غلط، وتستمر اللعبة!' : 'No penalty for incorrect guess, game continues!'}
+              {lang === 'ar' ? 'لا توجد خسارة إذا كان التخمين غلط، وتستمر اللعبة بالتبادل!' : 'No penalty for incorrect guess, game continues!'}
             </p>
           </div>
         </div>

@@ -157,6 +157,13 @@ export default function App() {
           setPendingGuessRemote(null);
         }
 
+        // Pending Question
+        if (room.pendingQuestion) {
+          setPendingQuestionRemote(room.pendingQuestion.question);
+        } else {
+          setPendingQuestionRemote(null);
+        }
+
         // Handle cards for online perspective
         const role = onlineService.userRole;
         if (role === 'host') {
