@@ -12,6 +12,7 @@ import {
   PlayerChoice,
   QuestionRecord,
   AnswerType,
+  PendingQuestionData,
 } from './types/game';
 import { CATEGORIES } from './data/categories';
 import { sound } from './utils/audio';
@@ -50,7 +51,7 @@ export default function App() {
   const [onlineRole, setOnlineRole] = useState<'host' | 'guest'>('host');
   const [onlineRoomData, setOnlineRoomData] = useState<OnlineRoomData | null>(null);
   const [isWaitingForRemoteOpponent, setIsWaitingForRemoteOpponent] = useState<boolean>(false);
-  const [pendingQuestionRemote, setPendingQuestionRemote] = useState<string | null>(null);
+  const [pendingQuestionRemote, setPendingQuestionRemote] = useState<PendingQuestionData | null>(null);
   const [pendingGuessRemote, setPendingGuessRemote] = useState<{
     guesserRole: 'host' | 'guest';
     guesserName: string;
@@ -159,7 +160,7 @@ export default function App() {
 
         // Pending Question
         if (room.pendingQuestion) {
-          setPendingQuestionRemote(room.pendingQuestion.question);
+          setPendingQuestionRemote(room.pendingQuestion);
         } else {
           setPendingQuestionRemote(null);
         }
@@ -225,7 +226,7 @@ export default function App() {
           setGamePhase('GAME_OVER');
         }
       } else if (event.type === 'QUESTION_PENDING' && event.questionRecord) {
-        setPendingQuestionRemote(event.questionRecord.question);
+        setPendingQuestionRemote(event.questionRecord);
       } else if (event.type === 'GUESS_REJECTED' || event.type === 'WRONG_GUESS') {
         sound.playWrongBuzzer();
         setPendingGuessRemote(null);

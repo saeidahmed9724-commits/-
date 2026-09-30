@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Player, PlayerChoice, QuestionRecord, CategoryDefinition, AnswerType } from '../types/game';
+import { Player, PlayerChoice, QuestionRecord, CategoryDefinition, AnswerType, PendingQuestionData } from '../types/game';
 import { sound } from '../utils/audio';
 import { isCorrectGuess } from '../utils/normalize';
 import {
@@ -11,13 +11,11 @@ import {
   HelpCircle,
   Eye,
   EyeOff,
-  History,
   ChevronDown,
   Sparkles,
   ThumbsUp,
   ThumbsDown,
   Smartphone,
-  ArrowRight,
   BookOpen,
 } from 'lucide-react';
 
@@ -40,7 +38,7 @@ interface BattleArenaProps {
   onOnlineAnswer?: (answer: AnswerType, question: string, note?: string) => void;
   onOnlineGuess?: (guess: string) => void;
   onOnlineResolveGuess?: (isCorrect: boolean) => void;
-  pendingQuestionRemote?: string | null;
+  pendingQuestionRemote?: PendingQuestionData | null;
   pendingGuessRemote?: {
     guesserRole: 'host' | 'guest';
     guesserName: string;
@@ -77,15 +75,22 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
 
   // Question drafting
   const [questionInput, setQuestionInput] = useState<string>('');
-  const [pendingQuestionLocal, setPendingQuestionLocal] = useState<string | null>(null);
+
+  // Local pending question for offline / pass-and-play / bot:
+  // { id, question, askedById, answeredById }
+  const [pendingQuestionLocal, setPendingQuestionLocal] = useState<{
+    id: string;
+    question: string;
+    askedById: string;
+    answeredById: string;
+  } | null>(null);
 
   // Answering controls: selected answer choice + optional note
   const [selectedAnswer, setSelectedAnswer] = useState<AnswerType | null>(null);
   const [answerNote, setAnswerNote] = useState<string>('');
 
-  // Pass and Play Handover Interstitial State:
-  // 'NONE' | 'OPPONENT_TO_ANSWER' | 'NEXT_PLAYER_TO_ASK'
-  const [passAndPlayHandoff, setPassAndPlayHandoff] = useState<'NONE' | 'OPPONENT_TO_ANSWER' | 'NEXT_PLAYER_TO_ASK'>('NONE');
+  // Pass and Play Handover Interstitial
+  const [passAndPlayHandoff, setPassAndPlayHandoff] = useState<boolean>(false);
 
   // Guess Modal State
   const [isGuessModalOpen, setIsGuessModalOpen] = useState<boolean>(false);
@@ -107,15 +112,26 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
   // Privacy hide toggle for opponent card when sitting side-by-side
   const [hideOpponentCard, setHideOpponentCard] = useState<boolean>(false);
 
-  const currentPendingQuestion = isOnlineMatch ? pendingQuestionRemote : pendingQuestionLocal;
+  // Determine current active question
+  const activeQuestionText = isOnlineMatch
+    ? pendingQuestionRemote?.question || null
+    : pendingQuestionLocal?.question || null;
+
+  const isAskerOfPendingQuestion = isOnlineMatch
+    ? pendingQuestionRemote?.askedByRole === onlineRole
+    : pendingQuestionLocal?.askedById === viewerId;
+
+  const isReceiverOfPendingQuestion = isOnlineMatch
+    ? pendingQuestionRemote?.answeredByRole === onlineRole
+    : pendingQuestionLocal?.answeredById === viewerId;
 
   const activePlayer = activePlayerId === player1.id ? player1 : player2;
   const opponentPlayer = activePlayerId === player1.id ? player2 : player1;
 
-  // Is it the viewer's turn to ask or guess?
-  const isMyTurn = isOnlineMatch
-    ? (onlineRole === 'host' ? activePlayerId === player1.id : activePlayerId === player2.id)
-    : viewerId === activePlayerId;
+  // Is it my turn to ask right now? (Only when no question is pending!)
+  const isMyTurnToAsk = isOnlineMatch
+    ? (onlineRole === 'host' ? activePlayerId === player1.id : activePlayerId === player2.id) && !pendingQuestionRemote
+    : viewerId === activePlayerId && !pendingQuestionLocal;
 
   const viewerIsP1 = viewerId === player1.id;
   const viewerName = viewerIsP1 ? player1.name : player2.name;
@@ -131,24 +147,29 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
   const opponentClues = questions.filter((q) => q.askedByPlayerId !== viewerId);
   const latestOpponentClue = opponentClues.length > 0 ? opponentClues[0] : null;
 
-  // Bot Turn Simulation: When active player is Bot, Bot asks a question about Bot's picture
+  // Bot Turn Simulation: When active player is Bot, Bot drafts a question after a brief typing delay
   useEffect(() => {
-    if (isBotMatch && activePlayerId === player2.id && !currentPendingQuestion) {
+    if (isBotMatch && activePlayerId === player2.id && !pendingQuestionLocal) {
       const timer = setTimeout(() => {
         const pool = lang === 'ar' ? category.suggestedQuestionsAr : category.suggestedQuestionsEn;
         const randomQ = pool.length > 0
           ? pool[Math.floor(Math.random() * pool.length)]
-          : (lang === 'ar' ? 'هل صورتي حاجة بتتاكل؟' : 'Is my item food?');
+          : (lang === 'ar' ? 'هل صورتي حاجة بتتاكل؟' : 'Is my item edible?');
         sound.playTurnChime();
-        setPendingQuestionLocal(randomQ);
-      }, 1200);
+        setPendingQuestionLocal({
+          id: 'q-' + Date.now(),
+          question: randomQ,
+          askedById: player2.id,
+          answeredById: player1.id,
+        });
+      }, 1400);
       return () => clearTimeout(timer);
     }
-  }, [isBotMatch, activePlayerId, currentPendingQuestion, category, lang]);
+  }, [isBotMatch, activePlayerId, pendingQuestionLocal, category, lang, player1.id, player2.id]);
 
-  // Ask Question Handler
+  // Ask Question Handler (Strictly only callable by the active player whose turn it is)
   const handleAsk = (qText: string) => {
-    if (!qText.trim()) return;
+    if (!qText.trim() || !isMyTurnToAsk) return;
     sound.playTurnChime();
 
     if (isOnlineMatch && onOnlineAsk) {
@@ -157,18 +178,24 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
       return;
     }
 
-    setPendingQuestionLocal(qText.trim());
+    const respondentId = activePlayerId === player1.id ? player2.id : player1.id;
+    setPendingQuestionLocal({
+      id: 'q-' + Date.now(),
+      question: qText.trim(),
+      askedById: activePlayerId,
+      answeredById: respondentId,
+    });
     setQuestionInput('');
     setSelectedAnswer(null);
     setAnswerNote('');
 
-    // If Pass & Play: Trigger phone handoff so opponent can answer
+    // In Pass & Play: prompt phone handoff to opponent to answer
     if (!isOnlineMatch && !isBotMatch) {
-      setPassAndPlayHandoff('OPPONENT_TO_ANSWER');
+      setPassAndPlayHandoff(true);
       return;
     }
 
-    // If Bot Match & Human asked: Bot answers automatically with realistic answer + optional fun note
+    // In Bot Match: Human asked, Bot answers after brief realistic delay
     if (isBotMatch && activePlayerId === player1.id) {
       setTimeout(() => {
         const target = p1Card.title.toLowerCase();
@@ -196,13 +223,13 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
 
         onAddQuestionAndAnswer(qText.trim(), botAns, botNote);
         setPendingQuestionLocal(null);
-      }, 700);
+      }, 800);
     }
   };
 
   // Submit Answer to Question
   const handleSubmitAnswer = () => {
-    if (!currentPendingQuestion || !selectedAnswer) return;
+    if (!activeQuestionText || !selectedAnswer) return;
 
     if (selectedAnswer === 'YES') sound.playYesSound();
     else if (selectedAnswer === 'NO') sound.playNoSound();
@@ -211,23 +238,23 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
     const note = answerNote.trim() || undefined;
 
     if (isOnlineMatch && onOnlineAnswer) {
-      onOnlineAnswer(selectedAnswer, currentPendingQuestion, note);
+      onOnlineAnswer(selectedAnswer, activeQuestionText, note);
       setSelectedAnswer(null);
       setAnswerNote('');
       return;
     }
 
     // Offline / Pass & Play / Bot Match:
-    onAddQuestionAndAnswer(currentPendingQuestion, selectedAnswer, note);
+    onAddQuestionAndAnswer(activeQuestionText, selectedAnswer, note);
     setPendingQuestionLocal(null);
     setSelectedAnswer(null);
     setAnswerNote('');
 
-    // In Pass & Play: The respondent (who is holding the phone) now becomes the active player to ask!
+    // In Pass & Play: The respondent (who holds phone) now becomes the active player to ask!
     if (!isOnlineMatch && !isBotMatch) {
       const nextActiveId = activePlayerId === player1.id ? player2.id : player1.id;
       setViewerId(nextActiveId);
-      setPassAndPlayHandoff('NONE');
+      setPassAndPlayHandoff(false);
     }
   };
 
@@ -235,7 +262,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
   const handleSubmitGuess = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanGuess = guessInput.trim();
-    if (!cleanGuess) return;
+    if (!cleanGuess || !isMyTurnToAsk) return;
 
     setIsGuessModalOpen(false);
 
@@ -349,20 +376,24 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
       {/* 2. TURN CALLOUT BANNER (Clearly stating whose turn it is to ask about their card) */}
       <div
         className={`rounded-2xl p-2.5 text-center text-xs font-black flex items-center justify-center gap-2 border transition-all ${
-          isMyTurn
+          isMyTurnToAsk
             ? 'bg-[#4ED7B0]/15 text-[#0F6F54] border-[#4ED7B0]/40 shadow-xs'
             : 'bg-[#FFD166]/20 text-[#8C6200] border-[#FFD166]/40'
         }`}
       >
-        <span className={`w-2 h-2 rounded-full ${isMyTurn ? 'bg-[#4ED7B0] animate-ping' : 'bg-[#FFD166]'}`} />
+        <span className={`w-2 h-2 rounded-full ${isMyTurnToAsk ? 'bg-[#4ED7B0] animate-ping' : 'bg-[#FFD166]'}`} />
         <span>
-          {isMyTurn
+          {isMyTurnToAsk
             ? (lang === 'ar'
-                ? `دورك يا ${activePlayer.name} 🎯 (اسأل عن صورتك المخفية أو خمّنها)`
-                : `Your turn, ${activePlayer.name} 🎯 (Ask about your card or guess)`)
+                ? `دورك يا ${viewerName} 🎯 (اكتب سؤالك عن صورتك المخفية أو خمّنها)`
+                : `Your turn, ${viewerName} 🎯 (Ask about your card or guess)`)
+            : activeQuestionText
+            ? (lang === 'ar'
+                ? `سؤال مطروح وبانتظار الإجابة 💬`
+                : `Question asked, waiting for answer 💬`)
             : (lang === 'ar'
-                ? `دور ${activePlayer.name} ⏳ (يسأل عن صورته المخفية)`
-                : `${activePlayer.name}'s turn ⏳`)}
+                ? `دور ${activePlayer.name} ✍️ (يكتب سؤاله عن صورته المخفية)`
+                : `${activePlayer.name}'s turn ✍️`)}
         </span>
       </div>
 
@@ -388,7 +419,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
             {/* Micro Deduction Track Pill for My Card */}
             <div className="mt-2 w-full p-2 bg-[#F5F3EE] rounded-xl border border-[#E8E4DA] text-[10px] space-y-0.5 text-start">
               <div className="font-black text-[#6C5CE7] flex items-center justify-between">
-                <span>{lang === 'ar' ? 'مسار استنتاجك:' : 'Your deduction:'}</span>
+                <span>{lang === 'ar' ? 'مسار استنتاجك:' : 'Your clues:'}</span>
                 <span className="font-mono font-bold text-slate-500">{myClues.length} أدلة</span>
               </div>
               {latestMyClue ? (
@@ -449,7 +480,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
             {/* Micro Deduction Track Pill for Opponent's Card */}
             <div className="mt-2 w-full p-2 bg-[#FAF8F5] rounded-xl border border-[#E8E4DA] text-[10px] space-y-0.5 text-start">
               <div className="font-black text-[#FF5C8A] flex items-center justify-between">
-                <span>{lang === 'ar' ? `استنتاج ${opponentName}:` : `${opponentName}'s deduction:`}</span>
+                <span>{lang === 'ar' ? `استنتاج ${opponentName}:` : `${opponentName}'s clues:`}</span>
                 <span className="font-mono font-bold text-slate-500">{opponentClues.length} أسئلة</span>
               </div>
               {latestOpponentClue ? (
@@ -469,10 +500,10 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
         </div>
       </div>
 
-      {/* 4. TURN ACTION ZONE (BOTTOM FOR 1-HAND MOBILE USABILITY) */}
+      {/* 4. TURN ACTION ZONE (EXPLICIT TWO-STATE UX AS REQUESTED) */}
       <div className="bg-white rounded-3xl p-4 border border-[#E8E4DA] game-card-shadow space-y-3">
-        {/* PASS & PLAY HANDOFF INTERSTITIAL (Hand phone to opponent to answer) */}
-        {!isOnlineMatch && !isBotMatch && passAndPlayHandoff === 'OPPONENT_TO_ANSWER' && currentPendingQuestion && (
+        {/* PASS & PLAY HANDOFF INTERSTITIAL */}
+        {!isOnlineMatch && !isBotMatch && passAndPlayHandoff && activeQuestionText && (
           <div className="p-4 bg-[#FFF8E7] border-2 border-[#171717] rounded-2xl text-center space-y-3 animate-scale-up">
             <div className="w-12 h-12 rounded-2xl bg-[#6C5CE7]/15 text-[#6C5CE7] flex items-center justify-center mx-auto text-2xl">
               <Smartphone className="w-6 h-6 text-[#6C5CE7]" />
@@ -486,10 +517,8 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                   ? `اعطِ الهاتف لـ ${opponentName} ليجيب عن سؤالك!`
                   : `Hand the phone to ${opponentName} to answer!`}
               </h4>
-              <p className="text-xs text-slate-500 font-bold">
-                {lang === 'ar'
-                  ? `${viewerName} سأل سؤالاً عن صورته المخفية. ${opponentName} هو من يعرف الإجابة.`
-                  : `${viewerName} asked a question about their card.`}
+              <p className="text-xs text-slate-600 font-bold bg-white p-2.5 rounded-xl border border-[#E8E4DA] shadow-2xs">
+                "{activeQuestionText}"
               </p>
             </div>
             <button
@@ -497,7 +526,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
               onClick={() => {
                 const opponentId = viewerIsP1 ? player2.id : player1.id;
                 setViewerId(opponentId);
-                setPassAndPlayHandoff('NONE');
+                setPassAndPlayHandoff(false);
                 sound.playTurnChime();
               }}
               className="w-full h-12 bg-[#6C5CE7] hover:bg-[#5b4bc4] text-white font-black rounded-xl text-sm shadow-md transition-all cursor-pointer active:scale-98 flex items-center justify-center gap-2"
@@ -507,49 +536,54 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
           </div>
         )}
 
-        {/* CASE A: PENDING QUESTION (Opponent must answer) */}
-        {currentPendingQuestion && passAndPlayHandoff === 'NONE' ? (
+        {/* STATE 2: A QUESTION HAS BEEN SENT (ANSWERING STATE) */}
+        {activeQuestionText && !passAndPlayHandoff ? (
           <div className="p-3.5 bg-[#FFF8E7] border-2 border-[#171717] rounded-2xl space-y-3 animate-fade-in">
-            {/* If I am the one who asked and waiting for opponent in online mode */}
-            {isOnlineMatch && isMyTurn ? (
+            {/* 2A: The Player who asked the question (Waiting for opponent answer) */}
+            {isAskerOfPendingQuestion ? (
               <div className="text-center py-4 space-y-2">
-                <div className="text-sm font-black text-[#171717]">
-                  "{currentPendingQuestion}"
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-[#E8E4DA] rounded-full text-xs font-black text-[#6C5CE7]">
+                  <span>💬</span>
+                  <span>{lang === 'ar' ? 'سؤالك أُرسل بنجاح:' : 'Your question was sent:'}</span>
                 </div>
-                <div className="text-xs font-black text-[#6C5CE7] animate-pulse">
-                  ⏳ {lang === 'ar' ? `في انتظار إجابة ${opponentName} عن صورتك...` : `Waiting for ${opponentName}'s answer...`}
+                <div className="text-base font-black text-[#171717] bg-white p-3 rounded-xl border border-[#E8E4DA] shadow-2xs">
+                  "{activeQuestionText}"
+                </div>
+                <div className="text-xs font-black text-[#6C5CE7] animate-pulse flex items-center justify-center gap-1.5 pt-1">
+                  <span>⏳</span>
+                  <span>{lang === 'ar' ? `في انتظار إجابة ${opponentName} عن صورتك...` : `Waiting for ${opponentName}'s answer...`}</span>
                 </div>
               </div>
             ) : (
-              /* Answering Controls for Opponent */
+              /* 2B: The Receiver Player (Prompted with the Answering Card) */
               <>
                 <div className="text-xs font-black text-[#171717] flex items-center justify-between">
-                  <span>
+                  <span className="text-slate-800 font-black">
                     {lang === 'ar'
-                      ? `سؤال من ${activePlayer.name} عن صورته المخفية:`
-                      : `Question from ${activePlayer.name} about their card:`}
+                      ? `${activePlayer.name} بيسألك:`
+                      : `${activePlayer.name} asks you:`}
                   </span>
                   <span className="text-[#6C5CE7] font-black text-[11px] bg-white px-2 py-0.5 rounded-full border border-[#E8E4DA]">
-                    {lang === 'ar' ? `أجب يا ${opponentName}` : `${opponentName} answers`}
+                    {lang === 'ar' ? `أجب يا ${viewerName}` : `${viewerName} answers`}
                   </span>
                 </div>
 
-                <div className="text-base font-black text-[#171717] bg-white p-3 rounded-xl border border-[#E8E4DA] text-center shadow-2xs">
-                  "{currentPendingQuestion}"
+                <div className="text-base font-black text-[#171717] bg-white p-3.5 rounded-xl border-2 border-[#171717] text-center shadow-xs">
+                  «{activeQuestionText}»
                 </div>
 
                 {/* Reminder of Secret Card chosen for the asker */}
-                <div className="flex items-center justify-center gap-2 p-1.5 bg-amber-100/60 rounded-xl text-[11px] font-bold text-amber-900 border border-amber-200">
-                  <span className="shrink-0">💡</span>
+                <div className="flex items-center justify-center gap-2 p-1.5 bg-amber-100/70 rounded-xl text-[11px] font-black text-amber-950 border border-amber-300">
+                  <span className="shrink-0 text-sm">💡</span>
                   <span>
                     {lang === 'ar'
-                      ? `أنت اخترت لـ ${activePlayer.name}: (${visibleOpponentCard.title})`
-                      : `You picked for them: (${visibleOpponentCard.title})`}
+                      ? `(أنت اخترت له: ${visibleOpponentCard.title})`
+                      : `(You picked for them: ${visibleOpponentCard.title})`}
                   </span>
                 </div>
 
                 {/* 4 High-contrast answer buttons with clear selected state */}
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => setSelectedAnswer('YES')}
@@ -630,9 +664,10 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
               </>
             )}
           </div>
-        ) : passAndPlayHandoff === 'NONE' ? (
-          /* CASE B: ACTIVE PLAYER'S TURN TO ASK OR GUESS */
-          isMyTurn ? (
+        ) : !activeQuestionText && !passAndPlayHandoff ? (
+          /* STATE 1: ASKING STATE (NO QUESTION PENDING) */
+          isMyTurnToAsk ? (
+            /* 1A: ACTIVE PLAYER'S TURN TO ASK (Input & Keyboard Visible) */
             <div className="space-y-3">
               {/* Primary Action Buttons (Thumb Reachable) */}
               <div className="flex flex-col gap-2.5">
@@ -650,7 +685,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                   <span className="text-lg">{lang === 'ar' ? 'أنا عرفت صورتي! 🎯' : 'I Know My Picture! 🎯'}</span>
                 </button>
 
-                {/* QUESTION INPUT + ASK BUTTON */}
+                {/* QUESTION INPUT + SEND BUTTON (ONLY VISIBLE & INTERACTIVE FOR ACTIVE PLAYER) */}
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -660,18 +695,19 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                 >
                   <input
                     type="text"
+                    autoFocus
                     value={questionInput}
                     onChange={(e) => setQuestionInput(e.target.value)}
-                    placeholder={lang === 'ar' ? 'اسأل عن صورتك (مثال: هل صورتي بتتاكل؟)...' : 'Ask about your card...'}
-                    className="flex-1 bg-[#FAF8F5] border border-[#E8E4DA] focus:border-[#6C5CE7] rounded-2xl px-4 py-3.5 text-sm text-[#171717] font-bold placeholder-slate-400 focus:outline-none"
+                    placeholder={lang === 'ar' ? 'اكتب سؤالك عن صورتك المخفية...' : 'Ask about your hidden card...'}
+                    className="flex-1 bg-[#FAF8F5] border-2 border-[#171717] focus:border-[#6C5CE7] rounded-2xl px-4 py-3.5 text-sm text-[#171717] font-black placeholder-slate-400 focus:outline-none shadow-inner"
                   />
 
                   <button
                     type="submit"
                     disabled={!questionInput.trim()}
-                    className="h-12 px-5 bg-[#6C5CE7] hover:bg-[#5b4bc4] disabled:opacity-40 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-1.5 shadow-md shadow-[#6C5CE7]/25 transition-all cursor-pointer active:scale-95 shrink-0"
+                    className="h-13 px-5 bg-[#6C5CE7] hover:bg-[#5b4bc4] disabled:opacity-40 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-1.5 shadow-md shadow-[#6C5CE7]/25 transition-all cursor-pointer active:scale-95 shrink-0"
                   >
-                    <span>{lang === 'ar' ? 'إرسال' : 'Ask'}</span>
+                    <span>{lang === 'ar' ? 'إرسال' : 'Send'}</span>
                     <Send className="w-4 h-4 rtl:rotate-180" />
                   </button>
                 </form>
@@ -700,16 +736,21 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
               )}
             </div>
           ) : (
-            /* Opponent's turn to ask: Waiting banner */
-            <div className="p-4 bg-slate-50 border border-[#E8E4DA] rounded-2xl text-center space-y-2">
-              <div className="text-xs font-black text-slate-500">
-                ⏳ {lang === 'ar' ? `دور ${activePlayer.name} الآن ليطرح سؤالاً عن صورته المخفية...` : `${activePlayer.name} is thinking of a question...`}
+            /* 1B: WAITING OPPONENT (NO INPUT, NO KEYBOARD, NO SEND BUTTON - SHOWS WRITING STATE) */
+            <div className="p-6 bg-slate-50 border-2 border-dashed border-[#E8E4DA] rounded-2xl text-center space-y-3">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[#6C5CE7]/10 text-2xl animate-bounce">
+                ✍️
               </div>
-              <p className="text-[11px] text-slate-400 font-medium">
-                {lang === 'ar'
-                  ? 'بمجرد أن يسأل سؤاله، سيظهر لك لتجيب عنه من خلال صورتك التي اخترتها له.'
-                  : 'Once they ask, you will answer based on their secret card.'}
-              </p>
+              <div className="space-y-1">
+                <h4 className="text-base font-black text-[#171717]">
+                  {lang === 'ar' ? `${activePlayer.name} بيكتب سؤاله... ✍️` : `${activePlayer.name} is writing a question... ✍️`}
+                </h4>
+                <p className="text-xs text-slate-500 font-bold max-w-xs mx-auto">
+                  {lang === 'ar'
+                    ? `بمجرد أن يرسل سؤاله، سيظهر لك فوراً هنا لتجيب عنه بنعم أو لا.`
+                    : `Once sent, the question will appear here for you to answer.`}
+                </p>
+              </div>
             </div>
           )
         ) : null}

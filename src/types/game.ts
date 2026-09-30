@@ -61,6 +61,13 @@ export interface PendingGuess {
   targetCardImageUrl: string;
 }
 
+export interface PendingQuestionData {
+  id: string;
+  question: string;
+  askedByRole: 'host' | 'guest';
+  answeredByRole: 'host' | 'guest';
+}
+
 export interface Player {
   id: string;
   name: string;
