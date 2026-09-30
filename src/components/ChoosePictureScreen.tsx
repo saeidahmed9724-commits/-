@@ -1,7 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CategoryDefinition, CategoryPresetItem, PlayerChoice } from '../types/game';
 import { sound } from '../utils/audio';
-import { Image as ImageIcon, X, ArrowRight, Upload, Sparkles, Clipboard, Lock } from 'lucide-react';
+import { ImageSearchModal } from './ImageSearchModal';
+import {
+  Image as ImageIcon,
+  X,
+  ArrowRight,
+  Upload,
+  Sparkles,
+  Clipboard,
+  Lock,
+  Search,
+  CheckCircle2,
+  RefreshCw,
+} from 'lucide-react';
 
 interface ChoosePictureScreenProps {
   chooserName: string;
@@ -20,13 +32,10 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
   isWaitingForRemoteOpponent = false,
   lang,
 }) => {
-  const [selectedImage, setSelectedImage] = useState<string | null>(
-    category.presetItems.length > 0 ? category.presetItems[0].imageUrl : null
-  );
-  const [selectedTitle, setSelectedTitle] = useState<string>(
-    category.presetItems.length > 0 ? category.presetItems[0].nameAr : 'عنصر سري'
-  );
-  const [isDragOver, setIsDragOver] = useState<boolean>(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedTitle, setSelectedTitle] = useState<string>('');
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState<boolean>(false);
+  const [searchInitialQuery, setSearchInitialQuery] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Global Ctrl+V paste support
@@ -59,7 +68,7 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
       if (res) {
         setSelectedImage(res);
         const rawName = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
-        setSelectedTitle(rawName || 'عنصر سري');
+        setSelectedTitle(rawName || (lang === 'ar' ? 'عنصر سري' : 'Secret Item'));
       }
     };
     reader.readAsDataURL(file);
@@ -83,6 +92,28 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
     });
   };
 
+  // Direct lock from inside the search modal
+  const handleSearchModalLock = (chosen: { imageUrl: string; title: string }) => {
+    setSelectedImage(chosen.imageUrl);
+    setSelectedTitle(chosen.title);
+    setIsSearchModalOpen(false);
+
+    // Lock and proceed directly back to game flow!
+    onConfirmPicture({
+      imageUrl: chosen.imageUrl,
+      title: chosen.title.trim() || (lang === 'ar' ? 'عنصر سري' : 'Secret Item'),
+      category: category.id,
+      chosenByPlayerId: chooserName,
+      heldByPlayerId: opponentName,
+    });
+  };
+
+  const openSearchWithQuery = (q: string = '') => {
+    sound.playCardFlip();
+    setSearchInitialQuery(q);
+    setIsSearchModalOpen(true);
+  };
+
   return (
     <div className="w-full max-w-md mx-auto py-2 sm:py-4 px-4 animate-scale-up space-y-3.5 pb-4">
       {/* Hidden file input */}
@@ -95,6 +126,17 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
           const file = e.target.files?.[0];
           if (file) handleFile(file);
         }}
+      />
+
+      {/* In-Game Integrated Image Search Modal */}
+      <ImageSearchModal
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
+        onSelectAndLock={handleSearchModalLock}
+        category={category}
+        opponentName={opponentName}
+        lang={lang}
+        initialQuery={searchInitialQuery}
       />
 
       {/* Top Bar with Category & Game Badge */}
@@ -150,10 +192,40 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
             </p>
           </div>
 
-          {/* Selected Picture Preview Card */}
-          <div className="bg-[#FAF8F5] rounded-2xl p-3.5 border border-[#E8E4DA] flex flex-col items-center justify-center text-center relative">
+          {/* Primary Action: In-Game Image Search Button (Prominent Hero) */}
+          <button
+            type="button"
+            onClick={() => openSearchWithQuery('')}
+            className="w-full p-4 bg-gradient-to-r from-[#6C5CE7] to-[#8070F6] hover:from-[#5b4bc4] hover:to-[#6C5CE7] text-white rounded-2xl flex items-center justify-between shadow-md shadow-[#6C5CE7]/25 cursor-pointer transition-all active:scale-98 group border border-[#6C5CE7]"
+          >
+            <div className="flex items-center gap-3 text-start">
+              <div className="w-11 h-11 rounded-xl bg-white/20 flex items-center justify-center text-xl shrink-0 group-hover:scale-110 transition-transform">
+                🔍
+              </div>
+              <div>
+                <div className="text-sm font-black flex items-center gap-1.5">
+                  <span>{lang === 'ar' ? 'اختار صورة (بحث مباشر)' : 'Choose Picture (Live Search)'}</span>
+                  <span className="text-[10px] bg-[#FFD166] text-[#171717] px-2 py-0.5 rounded-full font-black">
+                    {lang === 'ar' ? 'جديد ⚡' : 'NEW ⚡'}
+                  </span>
+                </div>
+                <div className="text-[11px] text-white/80 font-bold">
+                  {lang === 'ar'
+                    ? 'ابحث عن أي شيء (مثل Pizza أو برجر) واختره فوراً'
+                    : 'Search for anything (e.g. Pizza, Burger) inside the game'}
+                </div>
+              </div>
+            </div>
+
+            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+              <ArrowRight className={`w-4 h-4 text-white ${lang === 'ar' ? 'rotate-180' : ''}`} />
+            </div>
+          </button>
+
+          {/* Selected Picture Preview Card or Fallback State */}
+          <div className="bg-[#FAF8F5] rounded-2xl p-4 border border-[#E8E4DA] flex flex-col items-center justify-center text-center relative">
             {selectedImage ? (
-              <div className="w-full flex flex-col items-center space-y-2.5">
+              <div className="w-full flex flex-col items-center space-y-3">
                 <button
                   type="button"
                   onClick={() => setSelectedImage(null)}
@@ -163,7 +235,7 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
                   <X className="w-3.5 h-3.5" />
                 </button>
 
-                <div className="w-32 h-32 rounded-2xl overflow-hidden bg-white border border-[#E8E4DA] flex items-center justify-center p-2 shadow-sm">
+                <div className="w-36 h-36 rounded-2xl overflow-hidden bg-white border border-[#E8E4DA] flex items-center justify-center p-2 shadow-sm">
                   <img
                     src={selectedImage}
                     alt={selectedTitle}
@@ -171,10 +243,10 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
                   />
                 </div>
 
-                <div className="w-full max-w-xs space-y-1">
+                <div className="w-full max-w-xs space-y-1.5">
                   <div className="text-[11px] font-black text-emerald-600 flex items-center justify-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span>{lang === 'ar' ? 'الصورة جاهزة' : 'Image Ready'}</span>
+                    <CheckCircle2 className="w-3.5 h-3.5 fill-emerald-500 text-white" />
+                    <span>{lang === 'ar' ? 'الصورة جاهزة للتثبيت' : 'Image Ready to Lock'}</span>
                   </div>
 
                   <input
@@ -184,29 +256,43 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
                     placeholder={lang === 'ar' ? 'اسم العنصر...' : 'Item name...'}
                     className="w-full bg-white border border-[#E8E4DA] focus:border-[#6C5CE7] rounded-xl px-3 py-2 text-xs font-black text-center text-[#171717] focus:outline-none"
                   />
+
+                  <button
+                    type="button"
+                    onClick={() => openSearchWithQuery(selectedTitle)}
+                    className="text-[11px] font-black text-[#6C5CE7] hover:underline flex items-center justify-center gap-1 mx-auto cursor-pointer pt-0.5"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>{lang === 'ar' ? 'تغيير الصورة بالبحث' : 'Change image via search'}</span>
+                  </button>
                 </div>
               </div>
             ) : (
               <div
-                onClick={() => fileInputRef.current?.click()}
-                className="py-8 flex flex-col items-center justify-center text-slate-400 cursor-pointer"
+                onClick={() => openSearchWithQuery('')}
+                className="py-6 flex flex-col items-center justify-center text-slate-500 cursor-pointer group"
               >
-                <ImageIcon className="w-10 h-10 mb-2 opacity-50 text-[#6C5CE7]" />
-                <span className="text-xs font-bold">
-                  {lang === 'ar' ? 'اضغط لاختيار صورة من هاتفك' : 'Tap to upload from phone'}
+                <div className="w-12 h-12 rounded-2xl bg-[#6C5CE7]/10 text-[#6C5CE7] flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+                  <Search className="w-6 h-6" />
+                </div>
+                <span className="text-xs font-black text-[#171717]">
+                  {lang === 'ar' ? 'اضغط هنا للبحث عن صورة' : 'Tap here to search for an image'}
+                </span>
+                <span className="text-[11px] text-slate-400 font-bold mt-0.5">
+                  {lang === 'ar' ? 'دون الحاجة لحفظ صور على هاتفك' : 'No need to save pictures to your device'}
                 </span>
               </div>
             )}
           </div>
 
-          {/* Upload & Paste Action Buttons */}
+          {/* Secondary Action: Upload & Paste Action Buttons */}
           <div className="flex gap-2">
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="flex-1 py-2.5 px-3 bg-white hover:bg-slate-50 text-[#171717] text-xs font-black rounded-xl border border-[#E8E4DA] flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+              className="flex-1 py-2 px-3 bg-white hover:bg-slate-50 text-slate-700 text-xs font-black rounded-xl border border-[#E8E4DA] flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
             >
-              <Upload className="w-3.5 h-3.5 text-[#6C5CE7]" />
+              <Upload className="w-3.5 h-3.5 text-slate-500" />
               <span>{lang === 'ar' ? 'رفع من الهاتف' : 'Upload File'}</span>
             </button>
 
@@ -225,14 +311,13 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
                     }
                   }
                 } catch {
-                  // Fallback prompt
                   alert(lang === 'ar' ? 'الصق الصورة بالضغط على Ctrl+V' : 'Press Ctrl+V to paste');
                 }
               }}
-              className="flex-1 py-2.5 px-3 bg-white hover:bg-slate-50 text-[#171717] text-xs font-black rounded-xl border border-[#E8E4DA] flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+              className="flex-1 py-2 px-3 bg-white hover:bg-slate-50 text-slate-700 text-xs font-black rounded-xl border border-[#E8E4DA] flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
             >
-              <Clipboard className="w-3.5 h-3.5 text-[#FF5C8A]" />
-              <span>{lang === 'ar' ? 'لصق الصورة (Ctrl+V)' : 'Paste Image'}</span>
+              <Clipboard className="w-3.5 h-3.5 text-slate-500" />
+              <span>{lang === 'ar' ? 'لصق (Ctrl+V)' : 'Paste Image'}</span>
             </button>
           </div>
 
@@ -241,7 +326,9 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
             <div className="pt-2 border-t border-[#E8E4DA]">
               <div className="text-[11px] font-black text-slate-500 mb-2 flex items-center gap-1">
                 <Sparkles className="w-3 h-3 text-[#FFD166]" />
-                <span>{lang === 'ar' ? `أو اختر عنصراً جاهزاً من (${category.nameAr}):` : 'Or pick a preset:'}</span>
+                <span>
+                  {lang === 'ar' ? `أو اختر عنصراً جاهزاً من (${category.nameAr}):` : 'Or pick a preset:'}
+                </span>
               </div>
 
               <div className="grid grid-cols-4 gap-2">

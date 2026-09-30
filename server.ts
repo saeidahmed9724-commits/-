@@ -14,6 +14,241 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
+interface SearchImageResult {
+  id: string;
+  title: string;
+  thumbUrl: string;
+  fullUrl: string;
+  source: string;
+  width?: number;
+  height?: number;
+}
+
+const imageSearchCache = new Map<string, { timestamp: number; data: SearchImageResult[] }>();
+const CACHE_TTL_MS = 1000 * 60 * 30; // 30 minutes
+
+const ARABIC_KEYWORDS_MAP: Record<string, string> = {
+  برجر: 'burger hamburger',
+  همبرجر: 'hamburger',
+  بيتزا: 'pizza',
+  بطاطس: 'french fries',
+  سوشي: 'sushi',
+  شاورما: 'shawarma',
+  فراخ: 'fried chicken',
+  دجاج: 'chicken',
+  لحمة: 'steak beef',
+  كيك: 'cake dessert',
+  دونات: 'donut',
+  'ايس كريم': 'ice cream',
+  'آيس كريم': 'ice cream',
+  تاكو: 'taco',
+  باستا: 'pasta',
+  سلطة: 'salad',
+  فاكهة: 'fruit',
+  تفاح: 'apple',
+  تفاحة: 'apple',
+  موز: 'banana',
+  فراولة: 'strawberry',
+  برتقال: 'orange fruit',
+  مانجو: 'mango',
+  شوكولاتة: 'chocolate',
+  قهوة: 'coffee',
+  شاي: 'tea',
+  أسد: 'lion',
+  نمر: 'tiger',
+  فهد: 'cheetah leopard',
+  قطة: 'cat kitten',
+  بسة: 'cat',
+  كلب: 'dog puppy',
+  فيل: 'elephant',
+  زرافة: 'giraffe',
+  باندا: 'giant panda',
+  دب: 'bear',
+  حصان: 'horse',
+  حمار: 'donkey',
+  قرد: 'monkey',
+  ثعلب: 'fox',
+  ذئب: 'wolf',
+  أرنب: 'rabbit bunny',
+  غزال: 'deer gazelle',
+  دلفين: 'dolphin',
+  حوت: 'whale',
+  قرش: 'shark',
+  أخطبوط: 'octopus',
+  طائر: 'bird',
+  عصفور: 'sparrow bird',
+  نسر: 'eagle',
+  صقر: 'falcon',
+  بومة: 'owl',
+  بطريق: 'penguin',
+  سيارة: 'car automobile',
+  عربية: 'car',
+  طيارة: 'airplane',
+  طائرة: 'airplane',
+  قطار: 'train locomotive',
+  سفينة: 'ship boat',
+  قارب: 'boat',
+  دراجة: 'bicycle bike',
+  عجلة: 'bicycle',
+  موتوسيكل: 'motorcycle',
+  هاتف: 'smartphone iphone',
+  موبايل: 'smartphone',
+  آيفون: 'iphone',
+  كمبيوتر: 'computer laptop',
+  لابتوب: 'laptop',
+  تلفزيون: 'television',
+  شاشة: 'screen monitor',
+  كورة: 'football soccer ball',
+  'كرة قدم': 'soccer ball',
+  ساعة: 'wristwatch',
+  نظارة: 'glasses sunglasses',
+  حذاء: 'sneakers shoes',
+  شنطة: 'backpack bag',
+  كاميرا: 'camera',
+  جيتار: 'guitar',
+  بيانو: 'piano',
+  موسيقى: 'music instrument',
+  كتاب: 'book',
+  قلم: 'pen pencil',
+  بيت: 'house building',
+  شجرة: 'tree',
+  وردة: 'flower rose',
+  شمس: 'sun',
+  قمر: 'moon',
+  نجمة: 'star',
+  'برج خليفة': 'Burj Khalifa',
+  'برج إيفل': 'Eiffel Tower',
+  الأهرامات: 'Giza Pyramids',
+  ميسي: 'Lionel Messi',
+  رونالدو: 'Cristiano Ronaldo',
+};
+
+function getExpandedQueries(rawQuery: string): string[] {
+  const trimmed = rawQuery.trim();
+  const lower = trimmed.toLowerCase();
+  const queries: string[] = [];
+
+  // If in mapping directly
+  if (ARABIC_KEYWORDS_MAP[lower]) {
+    queries.push(ARABIC_KEYWORDS_MAP[lower]);
+  } else {
+    // Check partial contains
+    for (const [ar, en] of Object.entries(ARABIC_KEYWORDS_MAP)) {
+      if (lower.includes(ar)) {
+        queries.push(en);
+        break;
+      }
+    }
+  }
+
+  // Always include original query
+  if (!queries.includes(trimmed)) {
+    queries.push(trimmed);
+  }
+
+  return queries;
+}
+
+app.get('/api/search-images', async (req, res) => {
+  const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (!query) {
+    return res.json({ results: [] });
+  }
+
+  const cacheKey = query.toLowerCase();
+  const cached = imageSearchCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return res.json({ results: cached.data });
+  }
+
+  const searchQueries = getExpandedQueries(query);
+  const results: SearchImageResult[] = [];
+  const seenUrls = new Set<string>();
+
+  // Fetch for each query until we have enough high quality results
+  for (const q of searchQueries) {
+    if (results.length >= 20) break;
+
+    try {
+      // 1. Wikimedia Commons API
+      const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
+        q
+      )}&gsrnamespace=6&gsrlimit=20&prop=imageinfo&iiprop=url|size&iiurlwidth=500&format=json&origin=*`;
+      const commonsRes = await fetch(commonsUrl, {
+        headers: { 'User-Agent': 'GuessWhoGame/1.0 (educational-game; contact: info@example.com)' },
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (commonsRes.ok) {
+        const data: any = await commonsRes.json();
+        const pages = data?.query?.pages ? Object.values(data.query.pages) : [];
+        for (const p of pages as any[]) {
+          const info = p.imageinfo?.[0];
+          const thumbUrl = info?.thumburl || info?.url;
+          const fullUrl = info?.url || thumbUrl;
+          if (
+            thumbUrl &&
+            !seenUrls.has(thumbUrl) &&
+            !/\.(pdf|ogg|ogv|webm|djvu|tiff?)$/i.test(fullUrl)
+          ) {
+            seenUrls.add(thumbUrl);
+            const rawTitle = (p.title || '')
+              .replace(/^File:/i, '')
+              .replace(/\.[^/.]+$/, '')
+              .replace(/[-_]/g, ' ')
+              .trim();
+            results.push({
+              id: 'cm-' + p.pageid,
+              title: rawTitle.length > 50 ? rawTitle.slice(0, 50) + '...' : rawTitle || query,
+              thumbUrl,
+              fullUrl,
+              source: 'Wikimedia',
+              width: info?.thumbwidth,
+              height: info?.thumbheight,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Commons search error for', q, err);
+    }
+
+    // 2. Openverse API fallback or enrichment if results < 12
+    if (results.length < 12) {
+      try {
+        const openverseUrl = `https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}&page_size=15`;
+        const ovRes = await fetch(openverseUrl, {
+          headers: { 'User-Agent': 'GuessWhoGame/1.0' },
+          signal: AbortSignal.timeout(4000),
+        });
+        if (ovRes.ok) {
+          const data: any = await ovRes.json();
+          for (const item of (data.results || []) as any[]) {
+            const thumbUrl = item.thumbnail || item.url;
+            const fullUrl = item.url;
+            if (thumbUrl && !seenUrls.has(thumbUrl)) {
+              seenUrls.add(thumbUrl);
+              results.push({
+                id: 'ov-' + item.id,
+                title: item.title || query,
+                thumbUrl,
+                fullUrl,
+                source: 'Openverse',
+              });
+            }
+          }
+        }
+      } catch (err) {
+        // Ignore openverse error
+      }
+    }
+  }
+
+  // Cache results
+  imageSearchCache.set(cacheKey, { timestamp: Date.now(), data: results });
+  return res.json({ results });
+});
+
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
