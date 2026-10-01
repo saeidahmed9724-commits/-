@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Player, PlayerChoice, QuestionRecord, CategoryDefinition, AnswerType, PendingQuestionData } from '../types/game';
 import { sound } from '../utils/audio';
 import { isCorrectGuess } from '../utils/normalize';
-import { useRoomVoice } from '../context/RoomVoiceContext';
-import { PlayerMicBadge } from './PlayerMicBadge';
+import { liveVoiceManager } from '../utils/webrtcAudio';
 import {
   Send,
   Check,
@@ -153,15 +152,8 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
   const answerRecognitionRef = useRef<any>(null);
   const shouldAnswerBeListeningRef = useRef<boolean>(false);
 
-  // Independent Room Voice System (Always available to all players regardless of turn)
-  const {
-    isMyMicMuted,
-    isMySpeaking,
-    toggleMyMic,
-    togglePlayerMic,
-    getPlayerMicStatus,
-    errorMessage: voiceError,
-  } = useRoomVoice();
+  const [isLiveMicOn, setIsLiveMicOn] = useState<boolean>(false);
+  const [liveMicError, setLiveMicError] = useState<string | null>(null);
 
   // Setup Web Speech Recognition for voice question input and answer dictation (Continuous tap-to-toggle)
   useEffect(() => {
@@ -316,6 +308,43 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
           console.warn('Answer speech recognition error:', err);
         }
       }
+    }
+  };
+
+  // Toggle Live Mic on/off (Always available to both players anytime during the match: tap to open / tap to close)
+  const handleToggleLiveMic = async () => {
+    sound.playCardFlip();
+    if (!isLiveMicOn) {
+      try {
+        if (isOnlineMatch) {
+          const ok = await liveVoiceManager.start(onlineRole === 'host');
+          if (ok) {
+            setIsLiveMicOn(true);
+            setLiveMicError(null);
+          } else {
+            setLiveMicError(lang === 'ar' ? 'تعذر تشغيل المايك، يرجى منح الإذن' : 'Could not access microphone');
+          }
+        } else {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          (window as any).__localLiveStream = stream;
+          setIsLiveMicOn(true);
+          setLiveMicError(null);
+        }
+      } catch (err) {
+        console.warn('Live mic error:', err);
+        setLiveMicError(lang === 'ar' ? 'يرجى منح إذن المايك في المتصفح' : 'Mic permission needed');
+      }
+    } else {
+      if (isOnlineMatch) {
+        liveVoiceManager.stop();
+      } else {
+        const stream = (window as any).__localLiveStream as MediaStream;
+        if (stream) {
+          stream.getTracks().forEach((t) => t.stop());
+          (window as any).__localLiveStream = null;
+        }
+      }
+      setIsLiveMicOn(false);
     }
   };
 
@@ -531,22 +560,13 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
 
       {/* 1. TOP MOBILE MATCH HEADER */}
       <div className="game-card-surface p-3 border border-slate-700/60 flex items-center justify-between">
-        {/* P1 Score Badge & Mic Status */}
+        {/* P1 Score Badge */}
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-xs shadow-sm">
             1
           </div>
           <div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold text-slate-200 truncate max-w-[65px]">{player1.name}</span>
-              <PlayerMicBadge
-                isMuted={getPlayerMicStatus(player1.id).isMuted}
-                isSpeaking={getPlayerMicStatus(player1.id).isSpeaking}
-                onToggle={() => togglePlayerMic(player1.id)}
-                size="xs"
-                lang={lang}
-              />
-            </div>
+            <div className="text-xs font-bold text-slate-200 truncate max-w-[65px]">{player1.name}</div>
             <div className="text-sm font-black font-mono text-blue-400 leading-none">{player1.score}</div>
           </div>
         </div>
@@ -561,19 +581,10 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
           </span>
         </div>
 
-        {/* P2 Score Badge & Mic Status */}
+        {/* P2 Score Badge */}
         <div className="flex items-center gap-2">
           <div className="text-end">
-            <div className="flex items-center justify-end gap-1.5">
-              <PlayerMicBadge
-                isMuted={getPlayerMicStatus(player2.id).isMuted}
-                isSpeaking={getPlayerMicStatus(player2.id).isSpeaking}
-                onToggle={() => togglePlayerMic(player2.id)}
-                size="xs"
-                lang={lang}
-              />
-              <span className="text-xs font-bold text-slate-200 truncate max-w-[65px]">{player2.name}</span>
-            </div>
+            <div className="text-xs font-bold text-slate-200 truncate max-w-[65px]">{player2.name}</div>
             <div className="text-sm font-black font-mono text-purple-400 leading-none">{player2.score}</div>
           </div>
           <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black text-xs shadow-sm">
@@ -582,61 +593,62 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
         </div>
       </div>
 
-      {/* 1B. UNIFIED ROOM VOICE CHAT BAR (PERMANENT, INDEPENDENT OF TURNS / QUESTIONS) */}
+      {/* 1B. LIVE MIC STATUS & TOGGLE BAR (ALWAYS AVAILABLE TO BOTH PLAYERS ALL GAME) */}
       <div className="p-3 bg-gradient-to-r from-[#0F172A] via-[#1E293B] to-[#0F172A] border-2 border-slate-700/90 rounded-2xl shadow-md">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
-            <PlayerMicBadge
-              isMuted={isMyMicMuted}
-              isSpeaking={isMySpeaking}
-              onToggle={() => toggleMyMic()}
-              size="md"
-              lang={lang}
-            />
+            <div className="relative flex items-center justify-center">
+              {isLiveMicOn && (
+                <span className="absolute w-5 h-5 rounded-full bg-emerald-400 animate-ping opacity-75" />
+              )}
+              <span className={`w-3.5 h-3.5 rounded-full ${isLiveMicOn ? 'bg-emerald-500 shadow-md shadow-emerald-500/50' : 'bg-slate-600'}`} />
+            </div>
             <div>
               <div className="text-xs font-black text-slate-100 flex items-center gap-1.5">
-                <span>{isMyMicMuted ? (lang === 'ar' ? 'مايك الغرفة: مقفول 🔇' : 'Room Voice: Muted 🔇') : (lang === 'ar' ? 'مايك الغرفة: شغال لايف 🎙️' : 'Room Voice: Active 🎙️')}</span>
-                {isMySpeaking && (
-                  <span className="text-[10px] px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 font-bold rounded-full border border-emerald-500/30">
-                    {lang === 'ar' ? 'صوتك مسموع الآن •••' : 'Speaking •••'}
-                  </span>
-                )}
+                <span>{isLiveMicOn ? (lang === 'ar' ? 'المايك شغال ومفتوح لايف 🟢' : 'Live Mic is Active 🟢') : (lang === 'ar' ? 'المايك الصوتي المباشر 🎙️' : 'Live Voice Mic 🎙️')}</span>
+                <span className={`text-[10px] px-2 py-0.5 font-bold rounded-full border ${
+                  isLiveMicOn
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : 'bg-slate-800 text-slate-400 border-slate-700'
+                }`}>
+                  {lang === 'ar' ? 'متاح للطرفين دائماً' : 'Available anytime'}
+                </span>
               </div>
               <div className="text-[10px] text-slate-400 font-bold">
                 {lang === 'ar'
-                  ? 'متاح للطرفين دائماً — اضغط للفتح أو الكتم في أي وقت'
-                  : 'Available to all players — Independent of turns'}
+                  ? 'اضغط يفتح / اضغط يقفل — مش لازم تفضل ضاغط عليه'
+                  : 'Tap to open / Tap to close — No need to hold'}
               </div>
             </div>
           </div>
 
           <button
             type="button"
-            onClick={() => toggleMyMic()}
-            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-md ${
-              !isMyMicMuted
-                ? 'bg-rose-600 text-white hover:bg-rose-500 border border-rose-400'
+            onClick={handleToggleLiveMic}
+            className={`px-3.5 py-2.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-md ${
+              isLiveMicOn
+                ? 'bg-rose-600 text-white hover:bg-rose-500 border border-rose-400 animate-pulse'
                 : 'bg-emerald-600 text-white hover:bg-emerald-500 border border-emerald-400'
             }`}
           >
-            {!isMyMicMuted ? (
+            {isLiveMicOn ? (
               <>
                 <MicOff className="w-4 h-4 text-white" />
-                <span>{lang === 'ar' ? 'كتم المايك 🔇' : 'Mute Mic 🔇'}</span>
+                <span>{lang === 'ar' ? 'كتم المايك 🔴' : 'Mute Mic 🔴'}</span>
               </>
             ) : (
               <>
                 <Mic className="w-4 h-4 text-white" />
-                <span>{lang === 'ar' ? 'فتح المايك 🎙️' : 'Unmute Mic 🎙️'}</span>
+                <span>{lang === 'ar' ? 'فتح المايك 🎙️' : 'Open Mic 🎙️'}</span>
               </>
             )}
           </button>
         </div>
       </div>
 
-      {voiceError && (
+      {liveMicError && (
         <div className="px-3 py-1.5 bg-rose-950/70 border border-rose-600/50 rounded-xl text-[11px] font-bold text-rose-300 text-center animate-shake">
-          {voiceError}
+          {liveMicError}
         </div>
       )}
 

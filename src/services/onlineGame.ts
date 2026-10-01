@@ -47,10 +47,6 @@ export type OnlineEventCallback = (event: {
   guesserRole?: string;
   guess?: string;
   nextRole?: string;
-  signal?: any;
-  fromRole?: string;
-  isMuted?: boolean;
-  isSpeaking?: boolean;
 }) => void;
 
 class OnlineGameService {
@@ -164,14 +160,6 @@ class OnlineGameService {
     this.send({
       type: 'VOICE_SIGNAL',
       signal,
-    });
-  }
-
-  sendMicState(isMuted: boolean, isSpeaking: boolean) {
-    this.send({
-      type: 'MIC_STATE',
-      isMuted,
-      isSpeaking,
     });
   }
 
