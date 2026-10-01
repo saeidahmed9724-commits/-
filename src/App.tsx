@@ -263,6 +263,13 @@ export default function App() {
     };
   }, []);
 
+  // Close the live mic when the player leaves the match (it stays on between rounds).
+  useEffect(() => {
+    if (gamePhase === 'HOME' || gamePhase === 'JOIN_GAME' || gamePhase === 'GAME_OVER') {
+      if (liveVoiceManager.isActive()) liveVoiceManager.stop();
+    }
+  }, [gamePhase]);
+
   // Home Screen Navigators
   const handleOpenPlayerCountModal = (action: 'OFFLINE' | 'ONLINE') => {
     setPendingPlayerCountAction(action);

@@ -210,7 +210,25 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
         console.warn('SpeechRecognition init error:', e);
       }
     }
+    return () => {
+      // Stop any dictation still holding the mic when the language changes or the screen closes.
+      shouldBeListeningRef.current = false;
+      shouldAnswerBeListeningRef.current = false;
+      try { recognitionRef.current?.abort(); } catch {}
+      try { answerRecognitionRef.current?.abort(); } catch {}
+    };
   }, [lang]);
+
+  // Release the live mic stream if the table screen closes while it is still open.
+  useEffect(() => {
+    return () => {
+      const stream = (window as any).__multiLiveStream as MediaStream | null | undefined;
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+        (window as any).__multiLiveStream = null;
+      }
+    };
+  }, []);
 
   // Click once to start listening, click again to stop (No hold required!)
   const toggleListening = () => {

@@ -152,8 +152,29 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
   const answerRecognitionRef = useRef<any>(null);
   const shouldAnswerBeListeningRef = useRef<boolean>(false);
 
-  const [isLiveMicOn, setIsLiveMicOn] = useState<boolean>(false);
+  const [isLiveMicOn, setIsLiveMicOn] = useState<boolean>(() => isOnlineMatch && liveVoiceManager.isActive());
   const [liveMicError, setLiveMicError] = useState<string | null>(null);
+  const [voiceState, setVoiceState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>(() =>
+    isOnlineMatch ? liveVoiceManager.getState() : 'disconnected'
+  );
+
+  // Keep the mic UI in sync with the live voice connection (it survives between rounds),
+  // and release the local (non-online) mic stream if this screen goes away.
+  useEffect(() => {
+    if (isOnlineMatch) {
+      liveVoiceManager.setStateChangeCallback(setVoiceState);
+      setVoiceState(liveVoiceManager.getState());
+      setIsLiveMicOn(liveVoiceManager.isActive());
+    }
+    return () => {
+      if (isOnlineMatch) liveVoiceManager.setStateChangeCallback(() => {});
+      const local = (window as any).__localLiveStream as MediaStream | null | undefined;
+      if (local) {
+        local.getTracks().forEach((t) => t.stop());
+        (window as any).__localLiveStream = null;
+      }
+    };
+  }, [isOnlineMatch]);
 
   // Setup Web Speech Recognition for voice question input and answer dictation (Continuous tap-to-toggle)
   useEffect(() => {
@@ -256,6 +277,13 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
         console.warn('SpeechRecognition init error:', e);
       }
     }
+    return () => {
+      // Stop any dictation still holding the mic when the language changes or the screen closes.
+      shouldBeListeningRef.current = false;
+      shouldAnswerBeListeningRef.current = false;
+      try { recognitionRef.current?.abort(); } catch {}
+      try { answerRecognitionRef.current?.abort(); } catch {}
+    };
   }, [lang]);
 
   // Click once to start listening, click again to stop (No hold required!)
@@ -615,9 +643,15 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                 </span>
               </div>
               <div className="text-[10px] text-slate-400 font-bold">
-                {lang === 'ar'
-                  ? 'اضغط يفتح / اضغط يقفل — مش لازم تفضل ضاغط عليه'
-                  : 'Tap to open / Tap to close — No need to hold'}
+                {isOnlineMatch && isLiveMicOn
+                  ? voiceState === 'connected'
+                    ? (lang === 'ar' ? 'متصل بالخصم — تقدر تسمعه ويسمعك ✅' : 'Connected — you can talk both ways ✅')
+                    : voiceState === 'error'
+                      ? (lang === 'ar' ? 'تعذر الاتصال الصوتي — اقفل المايك وافتحه تاني' : 'Voice connection failed — toggle the mic and retry')
+                      : (lang === 'ar' ? 'في انتظار الخصم يفتح المايك كمان...' : 'Waiting for your opponent to open their mic...')
+                  : lang === 'ar'
+                    ? 'اضغط يفتح / اضغط يقفل — مش لازم تفضل ضاغط عليه'
+                    : 'Tap to open / Tap to close — No need to hold'}
               </div>
             </div>
           </div>
