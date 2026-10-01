@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Player, PlayerChoice, QuestionRecord, CategoryDefinition, AnswerType, PendingQuestionData } from '../types/game';
 import { sound } from '../utils/audio';
 import { isCorrectGuess } from '../utils/normalize';
-import { liveVoiceManager } from '../utils/webrtcAudio';
+import { liveVoiceManager, useVoiceChat } from '../utils/webrtcAudio';
 import {
   Send,
   Check,
@@ -140,245 +140,39 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
   const activePlayer = activePlayerId === player1.id ? player1 : player2;
   const opponentPlayer = activePlayerId === player1.id ? player2 : player1;
 
-  // Single Unified Question Composer Mode: 'VOICE' or 'TEXT'
-  const [composerMode, setComposerMode] = useState<'VOICE' | 'TEXT'>('VOICE');
-  const [isListening, setIsListening] = useState<boolean>(false);
-  const recognitionRef = useRef<any>(null);
-  const shouldBeListeningRef = useRef<boolean>(false);
-
-  // Answering Voice Support (Opponent can answer/dictate by mic too)
-  const [isAnswerListening, setIsAnswerListening] = useState<boolean>(false);
-  const [isVoiceAnswerUsed, setIsVoiceAnswerUsed] = useState<boolean>(false);
-  const answerRecognitionRef = useRef<any>(null);
-  const shouldAnswerBeListeningRef = useRef<boolean>(false);
-
-  const [isLiveMicOn, setIsLiveMicOn] = useState<boolean>(() => isOnlineMatch && liveVoiceManager.isMicOn());
+  // Voice chat (Online rooms only). Fully independent from turns, questions, answers and rounds:
+  // the mic keeps the state the player chose until the player changes it or the room ends.
+  const voice = useVoiceChat();
+  const isLiveMicOn = isOnlineMatch && voice.micOn;
+  const voiceState = voice.state;
   const [liveMicError, setLiveMicError] = useState<string | null>(null);
-  const [voiceState, setVoiceState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>(() =>
-    isOnlineMatch ? liveVoiceManager.getState() : 'disconnected'
-  );
 
-  // Online match: join the room's voice channel right away so each player hears the other
-  // whenever the other opens their mic (no need to open your own mic to listen).
-  // The connection survives between rounds and is closed when the player leaves the match.
-  // Local (non-online) mode: just release the local mic stream if this screen goes away.
+  // Online match: join the room's voice channel as soon as the match screen exists, so every
+  // player hears the others even with their own mic closed. The connection survives between
+  // turns and rounds; App closes it when the player leaves the room / the match ends.
   useEffect(() => {
-    if (isOnlineMatch) {
-      liveVoiceManager.setStateChangeCallback(setVoiceState);
-      if (onlineRole) liveVoiceManager.join(onlineRole === 'host');
-      setVoiceState(liveVoiceManager.getState());
-      setIsLiveMicOn(liveVoiceManager.isMicOn());
-    }
-    return () => {
-      if (isOnlineMatch) liveVoiceManager.setStateChangeCallback(() => {});
-      const local = (window as any).__localLiveStream as MediaStream | null | undefined;
-      if (local) {
-        local.getTracks().forEach((t) => t.stop());
-        (window as any).__localLiveStream = null;
-      }
-    };
+    if (isOnlineMatch && onlineRole) liveVoiceManager.join(onlineRole === 'host');
   }, [isOnlineMatch, onlineRole]);
 
-  // Setup Web Speech Recognition for voice question input and answer dictation (Continuous tap-to-toggle)
-  useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      try {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = lang === 'ar' ? 'ar-EG' : 'en-US';
-
-        recognition.onresult = (event: any) => {
-          let transcript = '';
-          for (let i = 0; i < event.results.length; i++) {
-            transcript += event.results[i][0].transcript;
-          }
-          if (transcript.trim()) {
-            setQuestionInput(transcript.trim());
-          }
-        };
-
-        recognition.onend = () => {
-          if (shouldBeListeningRef.current) {
-            try {
-              recognition.start();
-            } catch {
-              setIsListening(false);
-              shouldBeListeningRef.current = false;
-            }
-          } else {
-            setIsListening(false);
-          }
-        };
-
-        recognition.onerror = (e: any) => {
-          console.warn('SpeechRecognition error:', e);
-          if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-            shouldBeListeningRef.current = false;
-            setIsListening(false);
-          }
-        };
-
-        recognitionRef.current = recognition;
-
-        // Opponent Answer Recognition (Continuous tap-to-toggle)
-        const ansRecognition = new SpeechRecognition();
-        ansRecognition.continuous = true;
-        ansRecognition.interimResults = true;
-        ansRecognition.lang = lang === 'ar' ? 'ar-EG' : 'en-US';
-
-        ansRecognition.onresult = (event: any) => {
-          let transcript = '';
-          for (let i = 0; i < event.results.length; i++) {
-            transcript += event.results[i][0].transcript;
-          }
-          if (transcript.trim()) {
-            const lower = transcript.toLowerCase();
-            setIsVoiceAnswerUsed(true);
-            if (lower.includes('نعم') || lower.includes('اه') || lower.includes('ايوة') || lower.includes('yes') || lower.includes('صح')) {
-              setSelectedAnswer('YES');
-              sound.playYesSound();
-            } else if (lower.includes('لا') || lower.includes('لأ') || lower.includes('no') || lower.includes('مش')) {
-              setSelectedAnswer('NO');
-              sound.playNoSound();
-            } else if (lower.includes('أحيان') || lower.includes('احيان') || lower.includes('sometimes')) {
-              setSelectedAnswer('SOMETIMES');
-              sound.playMaybeSound();
-            } else if (lower.includes('مش متأكد') || lower.includes('مش عارف') || lower.includes('not sure')) {
-              setSelectedAnswer('NOT_SURE');
-              sound.playMaybeSound();
-            }
-            setAnswerNote(transcript.trim());
-          }
-        };
-
-        ansRecognition.onend = () => {
-          if (shouldAnswerBeListeningRef.current) {
-            try {
-              ansRecognition.start();
-            } catch {
-              setIsAnswerListening(false);
-              shouldAnswerBeListeningRef.current = false;
-            }
-          } else {
-            setIsAnswerListening(false);
-          }
-        };
-
-        ansRecognition.onerror = (e: any) => {
-          console.warn('AnsRecognition error:', e);
-          if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-            shouldAnswerBeListeningRef.current = false;
-            setIsAnswerListening(false);
-          }
-        };
-
-        answerRecognitionRef.current = ansRecognition;
-      } catch (e) {
-        console.warn('SpeechRecognition init error:', e);
-      }
-    }
-    return () => {
-      // Stop any dictation still holding the mic when the language changes or the screen closes.
-      shouldBeListeningRef.current = false;
-      shouldAnswerBeListeningRef.current = false;
-      try { recognitionRef.current?.abort(); } catch {}
-      try { answerRecognitionRef.current?.abort(); } catch {}
-    };
-  }, [lang]);
-
-  // Click once to start listening, click again to stop (No hold required!)
-  const toggleListening = () => {
-    if (isListening) {
-      shouldBeListeningRef.current = false;
-      setIsListening(false);
-      try {
-        recognitionRef.current?.stop();
-      } catch {}
-    } else {
-      shouldBeListeningRef.current = true;
-      setIsListening(true);
-      sound.playTurnChime();
-      if (!recognitionRef.current) {
-        if (!questionInput.trim()) {
-          setQuestionInput(lang === 'ar' ? '🎙️ سؤال بالمايك' : '🎙️ Mic Question');
-        }
-      } else {
-        try {
-          recognitionRef.current.lang = lang === 'ar' ? 'ar-EG' : 'en-US';
-          recognitionRef.current.start();
-        } catch (err) {
-          console.warn('Speech recognition start error:', err);
-        }
-      }
-    }
-  };
-
-  // Click once to start answer dictation, click again to stop (No hold required!)
-  const toggleAnswerListening = () => {
-    setIsVoiceAnswerUsed(true);
-    if (isAnswerListening) {
-      shouldAnswerBeListeningRef.current = false;
-      setIsAnswerListening(false);
-      try {
-        answerRecognitionRef.current?.stop();
-      } catch {}
-    } else {
-      shouldAnswerBeListeningRef.current = true;
-      setIsAnswerListening(true);
-      sound.playTurnChime();
-      if (!answerRecognitionRef.current) {
-        if (!selectedAnswer) setSelectedAnswer('YES');
-      } else {
-        try {
-          answerRecognitionRef.current.lang = lang === 'ar' ? 'ar-EG' : 'en-US';
-          answerRecognitionRef.current.start();
-        } catch (err) {
-          console.warn('Answer speech recognition error:', err);
-        }
-      }
-    }
-  };
-
-  // Toggle Live Mic on/off (Always available to both players anytime during the match: tap to open / tap to close)
+  // Mic ON/OFF (Online only). Closing the mic never closes the voice connection.
   const handleToggleLiveMic = async () => {
+    if (!isOnlineMatch) return;
     sound.playCardFlip();
-    if (!isLiveMicOn) {
-      try {
-        if (isOnlineMatch) {
-          // Make sure we are in the voice channel, then open only our own mic.
-          await liveVoiceManager.join(onlineRole === 'host');
-          const ok = await liveVoiceManager.startMic();
-          if (ok) {
-            setIsLiveMicOn(true);
-            setLiveMicError(null);
-          } else {
-            setLiveMicError(lang === 'ar' ? 'تعذر تشغيل المايك، يرجى منح الإذن' : 'Could not access microphone');
-          }
-        } else {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          (window as any).__localLiveStream = stream;
-          setIsLiveMicOn(true);
-          setLiveMicError(null);
-        }
-      } catch (err) {
-        console.warn('Live mic error:', err);
-        setLiveMicError(lang === 'ar' ? 'يرجى منح إذن المايك في المتصفح' : 'Mic permission needed');
-      }
+    if (liveVoiceManager.isMicOn()) {
+      liveVoiceManager.stopMic();
+      setLiveMicError(null);
+      return;
+    }
+    await liveVoiceManager.join(onlineRole === 'host');
+    const result = await liveVoiceManager.startMic();
+    if (result === 'ok') {
+      setLiveMicError(null);
+    } else if (result === 'denied') {
+      setLiveMicError(lang === 'ar' ? 'تم رفض إذن المايك — فعّله من إعدادات المتصفح ثم حاول تاني' : 'Microphone permission denied — enable it in browser settings and try again');
+    } else if (result === 'unsupported') {
+      setLiveMicError(lang === 'ar' ? 'مفيش مايك متاح على الجهاز (أو الموقع محتاج HTTPS)' : 'No microphone available (or the site needs HTTPS)');
     } else {
-      if (isOnlineMatch) {
-        // Close only our own mic; we stay connected and can still hear the opponent.
-        liveVoiceManager.stopMic();
-      } else {
-        const stream = (window as any).__localLiveStream as MediaStream;
-        if (stream) {
-          stream.getTracks().forEach((t) => t.stop());
-          (window as any).__localLiveStream = null;
-        }
-      }
-      setIsLiveMicOn(false);
+      setLiveMicError(lang === 'ar' ? 'تعذر تشغيل المايك' : 'Could not start the microphone');
     }
   };
 
@@ -430,19 +224,12 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
     }
   }, [isBotMatch, activePlayerId, pendingQuestionLocal, category, lang, player1.id, player2.id]);
 
-  // Ask Question Handler (Unified Composer: Voice or Text)
-  const handleAsk = (qText: string, isVoice: boolean = false) => {
-    const textToSend = qText.trim() || (isVoice ? (lang === 'ar' ? '🎙️ سؤال بالمايك' : '🎙️ Mic Question') : '');
+  // Ask Question Handler (text only)
+  const handleAsk = (qText: string) => {
+    const textToSend = qText.trim();
     if (!textToSend || !isMyTurnToAsk) return;
     sound.playTurnChime();
-
-    shouldBeListeningRef.current = false;
-    if (isListening && recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {}
-      setIsListening(false);
-    }
+    const isVoice = false;
 
     if (isOnlineMatch && onOnlineAsk) {
       onOnlineAsk(textToSend, isVoice);
@@ -518,21 +305,12 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
 
     const note = answerNote.trim() || undefined;
 
-    const wasVoice = isLiveMicOn || isVoiceAnswerUsed;
-
-    shouldAnswerBeListeningRef.current = false;
-    if (isAnswerListening && answerRecognitionRef.current) {
-      try {
-        answerRecognitionRef.current.stop();
-      } catch {}
-      setIsAnswerListening(false);
-    }
+    const wasVoice = false;
 
     if (isOnlineMatch && onOnlineAnswer) {
       onOnlineAnswer(selectedAnswer, activeQuestionText, note, wasVoice);
       setSelectedAnswer(null);
       setAnswerNote('');
-      setIsVoiceAnswerUsed(false);
       return;
     }
 
@@ -548,7 +326,6 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
     setPendingQuestionLocal(null);
     setSelectedAnswer(null);
     setAnswerNote('');
-    setIsVoiceAnswerUsed(false);
 
     // In Pass & Play: The respondent (who holds phone) now becomes the active player to ask!
     if (!isOnlineMatch && !isBotMatch) {
@@ -561,12 +338,6 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
   // Win Action: The secret card owner manually declares that the asker's question was the winning guess!
   const handleDeclareWinner = () => {
     if (!activeQuestionText) return;
-    shouldBeListeningRef.current = false;
-    shouldAnswerBeListeningRef.current = false;
-    setIsListening(false);
-    setIsAnswerListening(false);
-    try { recognitionRef.current?.stop(); } catch {}
-    try { answerRecognitionRef.current?.stop(); } catch {}
     sound.playVictoryFanfare();
 
     // The asker is the winner!
@@ -627,68 +398,84 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
         </div>
       </div>
 
-      {/* 1B. LIVE MIC STATUS & TOGGLE BAR (ALWAYS AVAILABLE TO BOTH PLAYERS ALL GAME) */}
-      <div className="p-3 bg-gradient-to-r from-[#0F172A] via-[#1E293B] to-[#0F172A] border-2 border-slate-700/90 rounded-2xl shadow-md">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5">
-            <div className="relative flex items-center justify-center">
-              {isLiveMicOn && (
-                <span className="absolute w-5 h-5 rounded-full bg-emerald-400 animate-ping opacity-75" />
-              )}
-              <span className={`w-3.5 h-3.5 rounded-full ${isLiveMicOn ? 'bg-emerald-500 shadow-md shadow-emerald-500/50' : 'bg-slate-600'}`} />
+      {/* 1B. ONLINE VOICE CHAT BAR — the only microphone in the game. Independent from turns. */}
+      {isOnlineMatch && (
+        <div className="p-3 bg-gradient-to-r from-[#0F172A] via-[#1E293B] to-[#0F172A] border-2 border-slate-700/90 rounded-2xl shadow-md">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="relative flex items-center justify-center shrink-0">
+                {(voice.localSpeaking || voice.remoteSpeaking) && (
+                  <span className="absolute w-5 h-5 rounded-full bg-emerald-400 animate-ping opacity-75" />
+                )}
+                <span
+                  className={`w-3.5 h-3.5 rounded-full ${
+                    voiceState === 'connected'
+                      ? 'bg-emerald-500 shadow-md shadow-emerald-500/50'
+                      : voiceState === 'error'
+                        ? 'bg-rose-500'
+                        : 'bg-amber-400 animate-pulse'
+                  }`}
+                />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-black text-slate-100">
+                  {voiceState === 'connected'
+                    ? (lang === 'ar' ? '🎙️ متصل ✅' : '🎙️ Connected ✅')
+                    : voiceState === 'reconnecting'
+                      ? (lang === 'ar' ? '⚠️ الصوت انقطع — جاري إعادة الاتصال...' : '⚠️ Voice lost — reconnecting...')
+                      : voiceState === 'error'
+                        ? (lang === 'ar' ? '❌ تعذر الاتصال الصوتي' : '❌ Voice connection failed')
+                        : (lang === 'ar' ? '🎙️ بيتم توصيل الصوت...' : '🎙️ Connecting voice...')}
+                </div>
+                <div className="text-[10px] text-slate-400 font-bold">
+                  {voice.remoteSpeaking
+                    ? (lang === 'ar' ? `🎙️ ${opponentName} يتكلم...` : `🎙️ ${opponentName} is speaking...`)
+                    : voice.localSpeaking
+                      ? (lang === 'ar' ? '🎙️ بتتكلم...' : '🎙️ You are speaking...')
+                      : isLiveMicOn
+                        ? (lang === 'ar' ? '🎙️ المايك مفتوح' : '🎙️ Mic is on')
+                        : (lang === 'ar' ? '🔇 المايك مقفول — لسه بتسمع الآخرين' : '🔇 Mic is off — you can still hear others')}
+                </div>
+              </div>
             </div>
-            <div>
-              <div className="text-xs font-black text-slate-100 flex items-center gap-1.5">
-                <span>{isLiveMicOn ? (lang === 'ar' ? 'المايك شغال ومفتوح لايف 🟢' : 'Live Mic is Active 🟢') : (lang === 'ar' ? 'المايك الصوتي المباشر 🎙️' : 'Live Voice Mic 🎙️')}</span>
-                <span className={`text-[10px] px-2 py-0.5 font-bold rounded-full border ${
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {voiceState === 'error' && (
+                <button
+                  type="button"
+                  onClick={() => liveVoiceManager.retry()}
+                  className="px-3 py-2.5 rounded-xl text-xs font-black bg-amber-600 text-white border border-amber-400 cursor-pointer active:scale-95"
+                >
+                  {lang === 'ar' ? 'إعادة المحاولة' : 'Retry'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleToggleLiveMic}
+                className={`px-3.5 py-2.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-md ${
                   isLiveMicOn
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                    : 'bg-slate-800 text-slate-400 border-slate-700'
-                }`}>
-                  {lang === 'ar' ? 'متاح للطرفين دائماً' : 'Available anytime'}
-                </span>
-              </div>
-              <div className="text-[10px] text-slate-400 font-bold">
-                {isOnlineMatch
-                  ? voiceState === 'connected'
-                    ? (lang === 'ar'
-                        ? (isLiveMicOn ? 'متصل — صوتك واصل للخصم وبتسمعه لما يتكلم ✅' : 'متصل — بتسمع الخصم لما يفتح مايكه، وافتح مايكك وقت ما تحب ✅')
-                        : (isLiveMicOn ? 'Connected — your voice reaches your opponent ✅' : 'Connected — you hear your opponent; open your mic any time ✅'))
-                    : voiceState === 'error'
-                      ? (lang === 'ar' ? 'تعذر الاتصال الصوتي — اقفل الصفحة وادخل تاني' : 'Voice connection failed — rejoin the room')
-                      : (lang === 'ar' ? 'بيتم توصيل الصوت مع الخصم...' : 'Connecting voice with your opponent...')
-                  : lang === 'ar'
-                    ? 'اضغط يفتح / اضغط يقفل — مش لازم تفضل ضاغط عليه'
-                    : 'Tap to open / Tap to close — No need to hold'}
-              </div>
+                    ? 'bg-rose-600 text-white hover:bg-rose-500 border border-rose-400'
+                    : 'bg-emerald-600 text-white hover:bg-emerald-500 border border-emerald-400'
+                }`}
+              >
+                {isLiveMicOn ? (
+                  <>
+                    <MicOff className="w-4 h-4 text-white" />
+                    <span>{lang === 'ar' ? 'قفل المايك' : 'Mic off'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-4 h-4 text-white" />
+                    <span>{lang === 'ar' ? 'فتح المايك' : 'Mic on'}</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
-
-          <button
-            type="button"
-            onClick={handleToggleLiveMic}
-            className={`px-3.5 py-2.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-md ${
-              isLiveMicOn
-                ? 'bg-rose-600 text-white hover:bg-rose-500 border border-rose-400 animate-pulse'
-                : 'bg-emerald-600 text-white hover:bg-emerald-500 border border-emerald-400'
-            }`}
-          >
-            {isLiveMicOn ? (
-              <>
-                <MicOff className="w-4 h-4 text-white" />
-                <span>{lang === 'ar' ? 'كتم المايك 🔴' : 'Mute Mic 🔴'}</span>
-              </>
-            ) : (
-              <>
-                <Mic className="w-4 h-4 text-white" />
-                <span>{lang === 'ar' ? 'فتح المايك 🎙️' : 'Open Mic 🎙️'}</span>
-              </>
-            )}
-          </button>
         </div>
-      </div>
+      )}
 
-      {liveMicError && (
+      {isOnlineMatch && liveMicError && (
         <div className="px-3 py-1.5 bg-rose-950/70 border border-rose-600/50 rounded-xl text-[11px] font-bold text-rose-300 text-center animate-shake">
           {liveMicError}
         </div>
@@ -903,31 +690,6 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                 <span className="w-2 h-2 rounded-full bg-purple-400 animate-ping" />
                 <span>{lang === 'ar' ? `في انتظار إجابة ${opponentName}...` : `Waiting for ${opponentName}'s answer...`}</span>
               </div>
-
-              {/* Live Mic Quick Talk while waiting */}
-              <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2 px-1">
-                <div className="text-start">
-                  <span className="text-[11px] font-bold text-slate-300 block">
-                    {lang === 'ar' ? 'المايك متاح للتحدث مع خصمك 🎙️:' : 'Mic available to talk 🎙️:'}
-                  </span>
-                  <span className="text-[10px] text-slate-500 font-bold block">
-                    {lang === 'ar' ? 'اضغط يفتح / اضغط يقفل' : 'Tap to open / Tap to close'}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleToggleLiveMic}
-                  className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer active:scale-95 shadow-sm ${
-                    isLiveMicOn
-                      ? 'bg-rose-600 text-white animate-pulse'
-                      : 'bg-emerald-600 text-white hover:bg-emerald-500'
-                  }`}
-                >
-                  {isLiveMicOn
-                    ? (lang === 'ar' ? 'المايك شغال 🟢 (إيقاف)' : 'Mic ON 🟢 (Mute)')
-                    : (lang === 'ar' ? 'فتح المايك 🎙️' : 'Open Mic 🎙️')}
-                </button>
-              </div>
             </div>
           ) : (
             /* 2B: The Receiver Player (Point 2 - Direct, bold answering card) */
@@ -1039,53 +801,18 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                 </p>
               </div>
 
-              {/* Optional Note & Voice Mic Dictation */}
+              {/* Optional Note */}
               <div className="space-y-1.5 pt-1">
-                <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 px-1">
-                  <span>{lang === 'ar' ? 'ملاحظة اختيارية أو تحدث بالمايك:' : 'Optional note or speak via mic:'}</span>
-                  {isVoiceAnswerUsed && (
-                    <span className="text-emerald-400 text-[10px] flex items-center gap-1 font-bold">
-                      <Mic className="w-3 h-3" />
-                      {lang === 'ar' ? 'إجابة صوتية مفعلة' : 'Voice answer enabled'}
-                    </span>
-                  )}
+                <div className="text-[11px] font-bold text-slate-400 px-1">
+                  {lang === 'ar' ? 'ملاحظة اختيارية:' : 'Optional note:'}
                 </div>
-
-                <div className="relative flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type="text"
-                      value={answerNote}
-                      onChange={(e) => setAnswerNote(e.target.value)}
-                      placeholder={
-                        isAnswerListening
-                          ? (lang === 'ar' ? 'جاري الاستماع... تكلم الآن 🔴' : 'Listening... Speak now 🔴')
-                          : (lang === 'ar' ? 'إضافة ملاحظة (مثلاً: غالبًا أيوه)...' : 'Add a note (optional)...')
-                      }
-                      className={`w-full h-11 bg-[#1E293B] border rounded-xl px-3 text-xs font-bold text-white placeholder-slate-500 focus:outline-none transition-all ${
-                        isAnswerListening
-                          ? 'border-rose-500 ring-2 ring-rose-500/30 bg-rose-500/10'
-                          : 'border-slate-700 focus:border-purple-500'
-                      }`}
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={toggleAnswerListening}
-                    title={lang === 'ar' ? 'تحدث في المايك' : 'Speak via mic'}
-                    className={`h-11 px-3.5 rounded-xl border flex items-center justify-center gap-1.5 text-xs font-black transition-all cursor-pointer active:scale-95 shadow-sm ${
-                      isAnswerListening
-                        ? 'bg-rose-600 text-white border-rose-500 animate-pulse'
-                        : isVoiceAnswerUsed
-                        ? 'bg-purple-600/30 text-purple-300 border-purple-500/50'
-                        : 'bg-[#1E293B] hover:bg-[#28384f] text-slate-300 border-slate-700'
-                    }`}
-                  >
-                    <Mic className="w-4 h-4 text-purple-300" />
-                    <span className="text-[11px]">{lang === 'ar' ? 'مايك 🎙️' : 'Mic 🎙️'}</span>
-                  </button>
-                </div>
+                <input
+                  type="text"
+                  value={answerNote}
+                  onChange={(e) => setAnswerNote(e.target.value)}
+                  placeholder={lang === 'ar' ? 'إضافة ملاحظة (مثلاً: غالبًا أيوه)...' : 'Add a note (optional)...'}
+                  className="w-full h-11 bg-[#1E293B] border border-slate-700 focus:border-purple-500 rounded-xl px-3 text-xs font-bold text-white placeholder-slate-500 focus:outline-none transition-all"
+                />
               </div>
 
               {/* Submit Answer CTA */}
@@ -1112,129 +839,34 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                 </span>
               </div>
 
-              {/* Segmented Mode Switch inside the composer: [ 🎙️ بالمايك ] vs [ ⌨️ كتابة السؤال ] */}
-              <div className="flex bg-[#070D1E] p-1 rounded-2xl border border-slate-700/80">
-                <button
-                  type="button"
-                  onClick={() => {
-                    sound.playCardFlip();
-                    setComposerMode('VOICE');
-                  }}
-                  className={`flex-1 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                    composerMode === 'VOICE'
-                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <Mic className="w-4 h-4 text-purple-200" />
-                  <span>{lang === 'ar' ? '🎙️ بالمايك' : '🎙️ By Mic'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    sound.playCardFlip();
-                    setComposerMode('TEXT');
-                    if (isListening && recognitionRef.current) {
-                      try {
-                        recognitionRef.current.stop();
-                      } catch {}
-                      setIsListening(false);
-                    }
-                  }}
-                  className={`flex-1 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                    composerMode === 'TEXT'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <Keyboard className="w-4 h-4 text-blue-200" />
-                  <span>{lang === 'ar' ? '⌨️ كتابة السؤال' : '⌨️ Type Question'}</span>
-                </button>
-              </div>
-
-              {/* The Single Unified Question Composer Box */}
+              {/* Question input (text only) */}
               <div className="space-y-2.5">
-                {composerMode === 'VOICE' ? (
-                  /* VOICE MODE: Mic Button + Real-time Preview */
-                  <div className="space-y-2.5">
-                    <button
-                      type="button"
-                      onClick={toggleListening}
-                      className={`w-full py-4 rounded-2xl border flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-98 shadow-md ${
-                        isListening
-                          ? 'bg-rose-500/20 border-rose-500 text-rose-300 ring-2 ring-rose-500/40 animate-pulse'
-                          : 'bg-[#1E293B] hover:bg-[#28384f] border-slate-700 text-slate-200'
-                      }`}
-                    >
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-transform ${
-                        isListening ? 'bg-rose-600 scale-110 shadow-rose-600/50' : 'bg-gradient-to-tr from-purple-600 to-indigo-600'
-                      }`}>
-                        <Mic className="w-6 h-6 text-white" />
-                      </div>
-                      <div className="text-xs font-black">
-                        {isListening
-                          ? (lang === 'ar' ? 'المايك شغال ومفتوح 🟢 (تكلم، واضغط هنا لقفله)' : 'Mic is OPEN 🟢 (Speak, tap to stop)')
-                          : (lang === 'ar' ? 'اضغط لفتح المايك والتحدث 🎙️' : 'Tap to open mic and speak 🎙️')}
-                      </div>
-                      <div className="text-[10px] text-slate-400 font-bold">
-                        {isListening
-                          ? (lang === 'ar' ? '⚡ المايك مستمر في الاستماع (مش لازم تفضل ضاغط)' : '⚡ Listening continuously without holding')
-                          : (lang === 'ar' ? 'اضغط يفتح / اضغط يقفل — مش لازم تفضل ضاغط عليه' : 'Tap to open / Tap to close — No need to hold')}
-                      </div>
-                    </button>
-
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={questionInput}
-                        onChange={(e) => setQuestionInput(e.target.value)}
-                        placeholder={
-                          lang === 'ar'
-                            ? 'سيظهر كلامك هنا، ويمكنك تعديله يدويًا...'
-                            : 'Your spoken question will appear here...'
-                        }
-                        className="w-full h-12 bg-[#070D1E] border border-slate-700 focus:border-purple-500 rounded-xl px-4 text-sm text-white font-bold placeholder-slate-500 focus:outline-none shadow-inner"
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  /* TEXT MODE: Exact same text field */
-                  <div className="relative">
-                    <input
-                      type="text"
-                      autoFocus
-                      value={questionInput}
-                      onChange={(e) => setQuestionInput(e.target.value)}
-                      placeholder={
-                        lang === 'ar'
-                          ? 'اكتب سؤالك عن صورتك المخفية (مثال: هل صورتي بتتاكل؟)...'
-                          : 'Type your question about your card...'
+                <div className="relative">
+                  <input
+                    type="text"
+                    autoFocus
+                    value={questionInput}
+                    onChange={(e) => setQuestionInput(e.target.value)}
+                    placeholder={
+                      lang === 'ar'
+                        ? 'اكتب سؤالك عن صورتك المخفية (مثال: هل صورتي بتتاكل؟)...'
+                        : 'Type your question about your card...'
+                    }
+                    className="w-full h-13 bg-[#070D1E] border border-slate-700 focus:border-blue-500 rounded-xl px-4 text-sm text-white font-bold placeholder-slate-500 focus:outline-none shadow-inner"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && questionInput.trim()) {
+                        e.preventDefault();
+                        handleAsk(questionInput);
                       }
-                      className="w-full h-13 bg-[#070D1E] border border-slate-700 focus:border-blue-500 rounded-xl px-4 text-sm text-white font-bold placeholder-slate-500 focus:outline-none shadow-inner"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && questionInput.trim()) {
-                          e.preventDefault();
-                          handleAsk(questionInput, false);
-                        }
-                      }}
-                    />
-                  </div>
-                )}
+                    }}
+                  />
+                </div>
 
                 {/* Primary Send Button */}
                 <button
                   type="button"
-                  disabled={!questionInput.trim() && !isListening}
-                  onClick={() => {
-                    if (isListening && recognitionRef.current) {
-                      try {
-                        recognitionRef.current.stop();
-                      } catch {}
-                      setIsListening(false);
-                    }
-                    handleAsk(questionInput, composerMode === 'VOICE');
-                  }}
+                  disabled={!questionInput.trim()}
+                  onClick={() => handleAsk(questionInput)}
                   className="w-full h-13 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:brightness-110 disabled:opacity-40 text-white font-black text-sm sm:text-base rounded-2xl flex items-center justify-center gap-2 shadow-lg cursor-pointer active:scale-98 transition-all"
                 >
                   <Send className="w-4 h-4 rtl:rotate-180" />
@@ -1255,31 +887,6 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                 <p className="text-xs text-slate-400 font-medium">
                   {lang === 'ar' ? 'سيظهر لك سؤاله هنا فوراً لتجيب عليه.' : 'Their question will appear here for you to answer.'}
                 </p>
-              </div>
-
-              {/* Live Mic Quick Talk while waiting */}
-              <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2 px-1">
-                <div className="text-start">
-                  <span className="text-[11px] font-bold text-slate-300 block">
-                    {lang === 'ar' ? 'المايك متاح للتحدث مع خصمك 🎙️:' : 'Mic available to talk 🎙️:'}
-                  </span>
-                  <span className="text-[10px] text-slate-500 font-bold block">
-                    {lang === 'ar' ? 'اضغط يفتح / اضغط يقفل' : 'Tap to open / Tap to close'}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleToggleLiveMic}
-                  className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer active:scale-95 shadow-sm ${
-                    isLiveMicOn
-                      ? 'bg-rose-600 text-white animate-pulse'
-                      : 'bg-emerald-600 text-white hover:bg-emerald-500'
-                  }`}
-                >
-                  {isLiveMicOn
-                    ? (lang === 'ar' ? 'المايك شغال 🟢 (إيقاف)' : 'Mic ON 🟢 (Mute)')
-                    : (lang === 'ar' ? 'فتح المايك 🎙️' : 'Open Mic 🎙️')}
-                </button>
               </div>
             </div>
           )

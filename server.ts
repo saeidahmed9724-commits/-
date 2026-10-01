@@ -1,5 +1,6 @@
 import express from 'express';
 import http from 'http';
+import crypto from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -372,6 +373,69 @@ function broadcastRoomState(room: OnlineRoom) {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// Voice chat ICE servers (STUN + TURN). TURN credentials are created here, on the
+// backend, so they never ship inside the frontend bundle. Configure ONE of:
+//
+//  A) Metered.ca (managed TURN, simplest):
+//       METERED_DOMAIN=yourapp.metered.live   METERED_API_KEY=...
+//  B) Your own coturn with `use-auth-secret` / `static-auth-secret=...`
+//       TURN_URLS="turn:turn.example.com:3478,turns:turn.example.com:5349?transport=tcp"
+//       TURN_SECRET=...            (temporary credentials are generated per request)
+//  C) A fixed TURN account (any provider):
+//       TURN_URLS=...  TURN_USERNAME=...  TURN_CREDENTIAL=...
+//
+// Without any of these only STUN is returned (works on easy networks, NOT on mobile data/CGNAT).
+// Render does not provide TURN: use one of the options above.
+// ---------------------------------------------------------------------------
+const STUN_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
+
+app.get('/api/ice-servers', async (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const iceServers: any[] = [...STUN_SERVERS];
+  let turn: 'metered' | 'coturn-temp' | 'static' | 'none' = 'none';
+
+  try {
+    const { METERED_DOMAIN, METERED_API_KEY, TURN_URLS, TURN_SECRET, TURN_USERNAME, TURN_CREDENTIAL } = process.env;
+    if (METERED_DOMAIN && METERED_API_KEY) {
+      const r = await fetch(
+        `https://${METERED_DOMAIN}/api/v1/turn/credentials?apiKey=${encodeURIComponent(METERED_API_KEY)}`,
+        { signal: AbortSignal.timeout(4000) }
+      );
+      if (r.ok) {
+        const list = await r.json();
+        if (Array.isArray(list)) {
+          iceServers.push(...list);
+          turn = 'metered';
+        }
+      } else {
+        console.warn('Metered TURN request failed:', r.status);
+      }
+    } else if (TURN_URLS && TURN_SECRET) {
+      // coturn REST-API style temporary credentials: username = expiry timestamp.
+      const username = String(Math.floor(Date.now() / 1000) + 6 * 3600);
+      const credential = crypto.createHmac('sha1', TURN_SECRET).update(username).digest('base64');
+      iceServers.push({ urls: TURN_URLS.split(',').map((u) => u.trim()).filter(Boolean), username, credential });
+      turn = 'coturn-temp';
+    } else if (TURN_URLS && TURN_USERNAME && TURN_CREDENTIAL) {
+      iceServers.push({
+        urls: TURN_URLS.split(',').map((u) => u.trim()).filter(Boolean),
+        username: TURN_USERNAME,
+        credential: TURN_CREDENTIAL,
+      });
+      turn = 'static';
+    }
+  } catch (err) {
+    console.warn('TURN credential error:', err);
+  }
+
+  res.json({ iceServers, turn: turn !== 'none' });
+});
+
 // REST endpoints
 app.get('/api/room/:code', (req, res) => {
   const code = req.params.code.toUpperCase();
@@ -664,6 +728,12 @@ wss.on('connection', (ws) => {
     if (userRoomCode) {
       const room = rooms.get(userRoomCode);
       if (room) {
+        // Abrupt disconnect: tell the other player's voice engine so it resets cleanly
+        // and waits for this player to come back (no stale connection, no endless spinner).
+        const otherWs = userRole === 'host' ? room.guest?.ws : room.host.ws;
+        if (otherWs && otherWs.readyState === WebSocket.OPEN) {
+          otherWs.send(JSON.stringify({ type: 'VOICE_SIGNAL', fromRole: userRole, signal: { type: 'bye' } }));
+        }
         if (userRole === 'host') {
           // If host leaves, notify guest
           room.guest?.ws?.send(JSON.stringify({ type: 'HOST_DISCONNECTED' }));
