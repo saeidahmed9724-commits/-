@@ -152,19 +152,22 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
   const answerRecognitionRef = useRef<any>(null);
   const shouldAnswerBeListeningRef = useRef<boolean>(false);
 
-  const [isLiveMicOn, setIsLiveMicOn] = useState<boolean>(() => isOnlineMatch && liveVoiceManager.isActive());
+  const [isLiveMicOn, setIsLiveMicOn] = useState<boolean>(() => isOnlineMatch && liveVoiceManager.isMicOn());
   const [liveMicError, setLiveMicError] = useState<string | null>(null);
   const [voiceState, setVoiceState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>(() =>
     isOnlineMatch ? liveVoiceManager.getState() : 'disconnected'
   );
 
-  // Keep the mic UI in sync with the live voice connection (it survives between rounds),
-  // and release the local (non-online) mic stream if this screen goes away.
+  // Online match: join the room's voice channel right away so each player hears the other
+  // whenever the other opens their mic (no need to open your own mic to listen).
+  // The connection survives between rounds and is closed when the player leaves the match.
+  // Local (non-online) mode: just release the local mic stream if this screen goes away.
   useEffect(() => {
     if (isOnlineMatch) {
       liveVoiceManager.setStateChangeCallback(setVoiceState);
+      if (onlineRole) liveVoiceManager.join(onlineRole === 'host');
       setVoiceState(liveVoiceManager.getState());
-      setIsLiveMicOn(liveVoiceManager.isActive());
+      setIsLiveMicOn(liveVoiceManager.isMicOn());
     }
     return () => {
       if (isOnlineMatch) liveVoiceManager.setStateChangeCallback(() => {});
@@ -174,7 +177,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
         (window as any).__localLiveStream = null;
       }
     };
-  }, [isOnlineMatch]);
+  }, [isOnlineMatch, onlineRole]);
 
   // Setup Web Speech Recognition for voice question input and answer dictation (Continuous tap-to-toggle)
   useEffect(() => {
@@ -345,7 +348,9 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
     if (!isLiveMicOn) {
       try {
         if (isOnlineMatch) {
-          const ok = await liveVoiceManager.start(onlineRole === 'host');
+          // Make sure we are in the voice channel, then open only our own mic.
+          await liveVoiceManager.join(onlineRole === 'host');
+          const ok = await liveVoiceManager.startMic();
           if (ok) {
             setIsLiveMicOn(true);
             setLiveMicError(null);
@@ -364,7 +369,8 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
       }
     } else {
       if (isOnlineMatch) {
-        liveVoiceManager.stop();
+        // Close only our own mic; we stay connected and can still hear the opponent.
+        liveVoiceManager.stopMic();
       } else {
         const stream = (window as any).__localLiveStream as MediaStream;
         if (stream) {
@@ -643,12 +649,14 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                 </span>
               </div>
               <div className="text-[10px] text-slate-400 font-bold">
-                {isOnlineMatch && isLiveMicOn
+                {isOnlineMatch
                   ? voiceState === 'connected'
-                    ? (lang === 'ar' ? 'متصل بالخصم — تقدر تسمعه ويسمعك ✅' : 'Connected — you can talk both ways ✅')
+                    ? (lang === 'ar'
+                        ? (isLiveMicOn ? 'متصل — صوتك واصل للخصم وبتسمعه لما يتكلم ✅' : 'متصل — بتسمع الخصم لما يفتح مايكه، وافتح مايكك وقت ما تحب ✅')
+                        : (isLiveMicOn ? 'Connected — your voice reaches your opponent ✅' : 'Connected — you hear your opponent; open your mic any time ✅'))
                     : voiceState === 'error'
-                      ? (lang === 'ar' ? 'تعذر الاتصال الصوتي — اقفل المايك وافتحه تاني' : 'Voice connection failed — toggle the mic and retry')
-                      : (lang === 'ar' ? 'في انتظار الخصم يفتح المايك كمان...' : 'Waiting for your opponent to open their mic...')
+                      ? (lang === 'ar' ? 'تعذر الاتصال الصوتي — اقفل الصفحة وادخل تاني' : 'Voice connection failed — rejoin the room')
+                      : (lang === 'ar' ? 'بيتم توصيل الصوت مع الخصم...' : 'Connecting voice with your opponent...')
                   : lang === 'ar'
                     ? 'اضغط يفتح / اضغط يقفل — مش لازم تفضل ضاغط عليه'
                     : 'Tap to open / Tap to close — No need to hold'}

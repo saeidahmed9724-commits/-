@@ -1,11 +1,17 @@
 // WebRTC Peer-to-Peer Live Voice Chat Manager
 //
-// Handshake (works no matter which player opens the mic first):
-//   - Every side that opens its mic sends { type: 'ready' } to the opponent.
-//   - The host is always the one who creates the offer, but only once the guest
-//     has announced 'ready' (the host remembers it even if its own mic is still off).
-//   - When a side closes its mic it sends { type: 'bye' } so the other side
-//     resets to a clean connection and can renegotiate the next time.
+// Model: the voice connection and the microphone are independent.
+//   - join():     connects the two players' audio channel as soon as both are in the room.
+//                 Everyone can HEAR the opponent immediately, even with their own mic closed.
+//   - startMic() / stopMic(): each player opens/closes their own mic whenever they want.
+//                 It only swaps the audio track on the existing connection (replaceTrack),
+//                 so there is no renegotiation and both sides can talk at the same time.
+//   - stop():     leaves the voice channel (mic off + connection closed).
+//
+// Handshake:
+//   - Each side sends { type: 'ready' } when it joins; the host creates the offer once the
+//     guest is ready (the host remembers 'ready' even if it has not joined yet).
+//   - { type: 'bye' } on leave makes the other side reset to a clean connection.
 //   - ICE candidates that arrive before the remote description are queued.
 //
 // Optional TURN relay (needed when players are on different mobile networks / CGNAT):
@@ -33,12 +39,12 @@ function buildIceServers(): RTCIceServer[] {
 
 export class WebRTCAudioManager {
   private pc: RTCPeerConnection | null = null;
+  private sender: RTCRtpSender | null = null;
   private localStream: MediaStream | null = null;
   private remoteAudio: HTMLAudioElement | null = null;
   private onSignalCallback?: (signal: any) => void;
   private onStateChangeCallback?: (state: VoiceState) => void;
-  private isMuted = false;
-  private active = false;
+  private joined = false;
   private isInitiator = false;
   private peerReady = false;
   private pendingCandidates: RTCIceCandidateInit[] = [];
@@ -53,8 +59,13 @@ export class WebRTCAudioManager {
     this.onStateChangeCallback = cb;
   }
 
+  /** True while this player is part of the voice channel (mic may still be closed). */
   isActive(): boolean {
-    return this.active;
+    return this.joined;
+  }
+
+  isMicOn(): boolean {
+    return this.localStream !== null;
   }
 
   getState(): VoiceState {
@@ -74,7 +85,6 @@ export class WebRTCAudioManager {
     }
   }
 
-  // Created lazily so it is born inside the user's click (needed by iOS/Safari autoplay rules).
   private ensureRemoteAudio() {
     if (this.remoteAudio) return;
     const el = document.createElement('audio');
@@ -103,21 +113,31 @@ export class WebRTCAudioManager {
     });
   }
 
-  private createPeer() {
+  private closePeer() {
     if (this.pc) {
       this.pc.onicecandidate = null;
       this.pc.ontrack = null;
       this.pc.onconnectionstatechange = null;
       this.pc.close();
+      this.pc = null;
     }
+    this.sender = null;
     this.pendingCandidates = [];
+  }
+
+  private createPeer() {
+    this.closePeer();
 
     const pc = new RTCPeerConnection({ iceServers: buildIceServers() });
     this.pc = pc;
 
-    this.localStream?.getAudioTracks().forEach((track) => {
-      pc.addTrack(track, this.localStream as MediaStream);
-    });
+    // One permanent two-way audio channel. The mic is attached/detached later with replaceTrack.
+    const transceiver = pc.addTransceiver('audio', { direction: 'sendrecv' });
+    this.sender = transceiver.sender;
+    const track = this.localStream?.getAudioTracks()[0];
+    if (track) {
+      this.sender.replaceTrack(track).catch((err) => console.warn('replaceTrack failed:', err));
+    }
 
     pc.ontrack = (event) => {
       this.ensureRemoteAudio();
@@ -135,7 +155,7 @@ export class WebRTCAudioManager {
     };
 
     pc.onconnectionstatechange = () => {
-      if (this.pc !== pc || !this.active) return;
+      if (this.pc !== pc || !this.joined) return;
       const s = pc.connectionState;
       if (s === 'connected') {
         this.setState('connected');
@@ -172,40 +192,62 @@ export class WebRTCAudioManager {
     }
   }
 
-  async start(isInitiator: boolean): Promise<boolean> {
-    // Always begin from a clean slate (e.g. a mic left on from a previous match).
-    this.releaseLocal();
+  /** Join the room's voice channel (no mic needed). Safe to call more than once. */
+  async join(isInitiator: boolean): Promise<void> {
+    if (this.joined) return;
     try {
+      this.isInitiator = isInitiator;
+      this.joined = true;
+      this.ensureRemoteAudio();
+      this.createPeer();
       this.setState('connecting');
+      this.sendSignal({ type: 'ready' });
+      if (this.isInitiator && this.peerReady) {
+        await this.makeOffer();
+      }
+    } catch (err) {
+      console.warn('WebRTC join error:', err);
+      this.stop();
+      this.setState('error');
+    }
+  }
+
+  /** Open this player's own mic. Does not affect what the opponent can do. */
+  async startMic(): Promise<boolean> {
+    if (!this.joined) return false;
+    if (this.localStream) return true;
+    try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error('getUserMedia is unavailable (needs HTTPS and a supported browser)');
       }
-      this.ensureRemoteAudio();
-      this.localStream = await navigator.mediaDevices.getUserMedia({
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
         },
       });
-
-      this.isInitiator = isInitiator;
-      this.isMuted = false;
-      this.active = true;
-      this.createPeer();
-
-      // Tell the opponent we are here; the host offers as soon as the guest is ready.
-      this.sendSignal({ type: 'ready' });
-      if (this.isInitiator && this.peerReady) {
-        await this.makeOffer();
+      if (!this.joined) {
+        // Left the room while the permission prompt was open.
+        stream.getTracks().forEach((t) => t.stop());
+        return false;
       }
+      this.localStream = stream;
+      await this.sender?.replaceTrack(stream.getAudioTracks()[0]);
       return true;
     } catch (err) {
-      console.warn('WebRTC audio start error:', err);
-      this.releaseLocal();
-      this.setState('error');
+      console.warn('Microphone start error:', err);
       return false;
     }
+  }
+
+  /** Close this player's own mic but stay connected so the opponent can still be heard. */
+  stopMic() {
+    if (this.localStream) {
+      this.localStream.getTracks().forEach((t) => t.stop());
+      this.localStream = null;
+    }
+    this.sender?.replaceTrack(null).catch(() => {});
   }
 
   async handleSignal(signal: any) {
@@ -213,8 +255,8 @@ export class WebRTCAudioManager {
       switch (signal?.type) {
         case 'ready':
           this.peerReady = true;
-          if (this.active && this.isInitiator) {
-            // The guest (re)opened its mic: build a fresh connection and offer.
+          if (this.joined && this.isInitiator) {
+            // The guest (re)joined: build a fresh connection and offer.
             this.createPeer();
             this.setState('connecting');
             await this.makeOffer();
@@ -224,14 +266,14 @@ export class WebRTCAudioManager {
         case 'bye':
           this.peerReady = false;
           if (this.remoteAudio) this.remoteAudio.srcObject = null;
-          if (this.active) {
+          if (this.joined) {
             this.createPeer();
             this.setState('connecting');
           }
           break;
 
         case 'offer': {
-          if (!this.active) return;
+          if (!this.joined) return;
           // A fresh connection per offer keeps renegotiation simple and reliable.
           this.createPeer();
           const pc = this.pc;
@@ -264,42 +306,18 @@ export class WebRTCAudioManager {
     }
   }
 
-  toggleMute(): boolean {
-    if (!this.localStream) return false;
-    this.isMuted = !this.isMuted;
-    this.localStream.getAudioTracks().forEach((track) => {
-      track.enabled = !this.isMuted;
-    });
-    return this.isMuted;
-  }
-
-  getIsMuted(): boolean {
-    return this.isMuted;
-  }
-
-  private releaseLocal() {
-    this.active = false;
-    this.pendingCandidates = [];
+  /** Leave the voice channel: mic off, connection closed. */
+  stop() {
+    const wasJoined = this.joined;
+    if (wasJoined) this.sendSignal({ type: 'bye' });
+    this.joined = false;
+    this.peerReady = false;
     if (this.localStream) {
-      this.localStream.getTracks().forEach((track) => track.stop());
+      this.localStream.getTracks().forEach((t) => t.stop());
       this.localStream = null;
     }
-    if (this.pc) {
-      this.pc.onicecandidate = null;
-      this.pc.ontrack = null;
-      this.pc.onconnectionstatechange = null;
-      this.pc.close();
-      this.pc = null;
-    }
-    if (this.remoteAudio) {
-      this.remoteAudio.srcObject = null;
-    }
-  }
-
-  stop() {
-    const wasActive = this.active;
-    if (wasActive) this.sendSignal({ type: 'bye' });
-    this.releaseLocal();
+    this.closePeer();
+    if (this.remoteAudio) this.remoteAudio.srcObject = null;
     this.setState('disconnected');
   }
 }
