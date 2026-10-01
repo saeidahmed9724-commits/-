@@ -547,6 +547,22 @@ wss.on('connection', (ws) => {
         }
       }
 
+      // 6C. Real-time Room Microphone State (Muted/Speaking)
+      else if (msg.type === 'MIC_STATE') {
+        if (!userRoomCode || !userRole) return;
+        const room = rooms.get(userRoomCode);
+        if (!room) return;
+        const targetWs = userRole === 'host' ? room.guest?.ws : room.host.ws;
+        if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+          targetWs.send(JSON.stringify({
+            type: 'MIC_STATE',
+            fromRole: userRole,
+            isMuted: Boolean(msg.isMuted),
+            isSpeaking: Boolean(msg.isSpeaking),
+          }));
+        }
+      }
+
       // 7. CONFIRM_WIN / DECLARE_WIN: Secret card owner confirms that the asker's question was the winning guess!
       else if (msg.type === 'CONFIRM_WIN' || msg.type === 'DECLARE_WIN') {
         if (!userRoomCode || !userRole) return;

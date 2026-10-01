@@ -16,6 +16,7 @@ import {
   Smartphone,
   BookOpen,
   Mic,
+  MicOff,
   Keyboard,
   Trophy,
   Sparkles,
@@ -49,6 +50,7 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
   const [questionInput, setQuestionInput] = useState<string>('');
   const [isListening, setIsListening] = useState<boolean>(false);
   const recognitionRef = useRef<any>(null);
+  const shouldBeListeningRef = useRef<boolean>(false);
 
   // Pending question active in round (waiting for target owner to answer)
   const [pendingQuestion, setPendingQuestion] = useState<{
@@ -67,6 +69,11 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
   const [isAnswerListening, setIsAnswerListening] = useState<boolean>(false);
   const [isVoiceAnswerUsed, setIsVoiceAnswerUsed] = useState<boolean>(false);
   const answerRecognitionRef = useRef<any>(null);
+  const shouldAnswerBeListeningRef = useRef<boolean>(false);
+
+  // Live Mic available to all players anytime during match
+  const [isLiveMicOn, setIsLiveMicOn] = useState<boolean>(false);
+  const [liveMicError, setLiveMicError] = useState<string | null>(null);
 
   // Pass & Play Handoff State
   const [passAndPlayHandoff, setPassAndPlayHandoff] = useState<boolean>(false);
@@ -109,14 +116,14 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
   );
   const currentTargetOwner = players.find((p) => p.id === selectedTargetOwnerId);
 
-  // Setup Web Speech Recognition
+  // Setup Web Speech Recognition (Continuous tap-to-toggle)
   useEffect(() => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       try {
         const rec = new SpeechRecognition();
-        rec.continuous = false;
+        rec.continuous = true;
         rec.interimResults = true;
         rec.lang = lang === 'ar' ? 'ar-EG' : 'en-US';
 
@@ -129,13 +136,30 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
             setQuestionInput(transcript.trim());
           }
         };
-        rec.onend = () => setIsListening(false);
-        rec.onerror = () => setIsListening(false);
+        rec.onend = () => {
+          if (shouldBeListeningRef.current) {
+            try {
+              rec.start();
+            } catch {
+              setIsListening(false);
+              shouldBeListeningRef.current = false;
+            }
+          } else {
+            setIsListening(false);
+          }
+        };
+        rec.onerror = (e: any) => {
+          console.warn('SpeechRecognition error:', e);
+          if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+            shouldBeListeningRef.current = false;
+            setIsListening(false);
+          }
+        };
         recognitionRef.current = rec;
 
-        // Answer speech recognition
+        // Answer speech recognition (Continuous tap-to-toggle)
         const ansRec = new SpeechRecognition();
-        ansRec.continuous = false;
+        ansRec.continuous = true;
         ansRec.interimResults = true;
         ansRec.lang = lang === 'ar' ? 'ar-EG' : 'en-US';
         ansRec.onresult = (event: any) => {
@@ -162,8 +186,25 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
             setAnswerNote(transcript.trim());
           }
         };
-        ansRec.onend = () => setIsAnswerListening(false);
-        ansRec.onerror = () => setIsAnswerListening(false);
+        ansRec.onend = () => {
+          if (shouldAnswerBeListeningRef.current) {
+            try {
+              ansRec.start();
+            } catch {
+              setIsAnswerListening(false);
+              shouldAnswerBeListeningRef.current = false;
+            }
+          } else {
+            setIsAnswerListening(false);
+          }
+        };
+        ansRec.onerror = (e: any) => {
+          console.warn('AnsRecognition error:', e);
+          if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+            shouldAnswerBeListeningRef.current = false;
+            setIsAnswerListening(false);
+          }
+        };
         answerRecognitionRef.current = ansRec;
       } catch (e) {
         console.warn('SpeechRecognition init error:', e);
@@ -171,52 +212,73 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
     }
   }, [lang]);
 
+  // Click once to start listening, click again to stop (No hold required!)
   const toggleListening = () => {
-    if (!recognitionRef.current) {
-      setIsListening(!isListening);
-      if (!isListening) {
-        sound.playTurnChime();
-        if (!questionInput.trim()) setQuestionInput(lang === 'ar' ? '🎙️ سؤال بالمايك' : '🎙️ Mic Question');
-      }
-      return;
-    }
     if (isListening) {
-      try { recognitionRef.current.stop(); } catch {}
+      shouldBeListeningRef.current = false;
       setIsListening(false);
+      try { recognitionRef.current?.stop(); } catch {}
     } else {
-      try {
-        recognitionRef.current.lang = lang === 'ar' ? 'ar-EG' : 'en-US';
-        recognitionRef.current.start();
-        setIsListening(true);
-        sound.playTurnChime();
-      } catch {
-        setIsListening(false);
+      shouldBeListeningRef.current = true;
+      setIsListening(true);
+      sound.playTurnChime();
+      if (!recognitionRef.current) {
+        if (!questionInput.trim()) setQuestionInput(lang === 'ar' ? '🎙️ سؤال بالمايك' : '🎙️ Mic Question');
+      } else {
+        try {
+          recognitionRef.current.lang = lang === 'ar' ? 'ar-EG' : 'en-US';
+          recognitionRef.current.start();
+        } catch {
+          setIsListening(false);
+        }
       }
     }
   };
 
+  // Click once to start answer dictation, click again to stop (No hold required!)
   const toggleAnswerListening = () => {
     setIsVoiceAnswerUsed(true);
-    if (!answerRecognitionRef.current) {
-      setIsAnswerListening(!isAnswerListening);
-      if (!isAnswerListening) {
-        sound.playTurnChime();
-        if (!selectedAnswer) setSelectedAnswer('YES');
-      }
-      return;
-    }
     if (isAnswerListening) {
-      try { answerRecognitionRef.current.stop(); } catch {}
+      shouldAnswerBeListeningRef.current = false;
       setIsAnswerListening(false);
+      try { answerRecognitionRef.current?.stop(); } catch {}
     } else {
-      try {
-        answerRecognitionRef.current.lang = lang === 'ar' ? 'ar-EG' : 'en-US';
-        answerRecognitionRef.current.start();
-        setIsAnswerListening(true);
-        sound.playTurnChime();
-      } catch {
-        setIsAnswerListening(false);
+      shouldAnswerBeListeningRef.current = true;
+      setIsAnswerListening(true);
+      sound.playTurnChime();
+      if (!answerRecognitionRef.current) {
+        if (!selectedAnswer) setSelectedAnswer('YES');
+      } else {
+        try {
+          answerRecognitionRef.current.lang = lang === 'ar' ? 'ar-EG' : 'en-US';
+          answerRecognitionRef.current.start();
+        } catch {
+          setIsAnswerListening(false);
+        }
       }
+    }
+  };
+
+  // Toggle Live Voice Mic on/off anytime throughout match
+  const handleToggleLiveMic = async () => {
+    sound.playCardFlip();
+    if (!isLiveMicOn) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        (window as any).__multiLiveStream = stream;
+        setIsLiveMicOn(true);
+        setLiveMicError(null);
+      } catch (err) {
+        console.warn('Live mic error:', err);
+        setLiveMicError(lang === 'ar' ? 'يرجى منح إذن المايك في المتصفح' : 'Mic permission needed');
+      }
+    } else {
+      const stream = (window as any).__multiLiveStream as MediaStream;
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+        (window as any).__multiLiveStream = null;
+      }
+      setIsLiveMicOn(false);
     }
   };
 
@@ -226,6 +288,7 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
     if (!textToSend || !currentTargetOwner) return;
 
     sound.playTurnChime();
+    shouldBeListeningRef.current = false;
     if (isListening && recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch {}
       setIsListening(false);
@@ -274,6 +337,11 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
     };
 
     setQuestions((prev) => [newRecord, ...prev]);
+    shouldAnswerBeListeningRef.current = false;
+    if (isAnswerListening && answerRecognitionRef.current) {
+      try { answerRecognitionRef.current.stop(); } catch {}
+      setIsAnswerListening(false);
+    }
     setPendingQuestion(null);
     setSelectedAnswer(null);
     setAnswerNote('');
@@ -286,6 +354,13 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
   // WIN ACTION: Target Owner clicks "🏆 أيوه، كسبت!"
   const handleDeclareWinner = () => {
     if (!pendingQuestion || !currentTargetOwner || !currentTargetOwner.secretImage) return;
+
+    shouldBeListeningRef.current = false;
+    shouldAnswerBeListeningRef.current = false;
+    setIsListening(false);
+    setIsAnswerListening(false);
+    try { recognitionRef.current?.stop(); } catch {}
+    try { answerRecognitionRef.current?.stop(); } catch {}
 
     sound.playVictoryFanfare();
     try {
@@ -523,6 +598,65 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
           );
         })}
       </div>
+
+      {/* 1B. LIVE MIC STATUS & TOGGLE BAR (ALWAYS AVAILABLE TO ALL PLAYERS THROUGHOUT GAME) */}
+      <div className="p-3 bg-gradient-to-r from-[#0F172A] via-[#1E293B] to-[#0F172A] border-2 border-slate-700/90 rounded-2xl shadow-md">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="relative flex items-center justify-center">
+              {isLiveMicOn && (
+                <span className="absolute w-5 h-5 rounded-full bg-emerald-400 animate-ping opacity-75" />
+              )}
+              <span className={`w-3.5 h-3.5 rounded-full ${isLiveMicOn ? 'bg-emerald-500 shadow-md shadow-emerald-500/50' : 'bg-slate-600'}`} />
+            </div>
+            <div>
+              <div className="text-xs font-black text-slate-100 flex items-center gap-1.5">
+                <span>{isLiveMicOn ? (lang === 'ar' ? 'المايك شغال ومفتوح لايف 🟢' : 'Live Mic is Active 🟢') : (lang === 'ar' ? 'المايك الصوتي المباشر 🎙️' : 'Live Voice Mic 🎙️')}</span>
+                <span className={`text-[10px] px-2 py-0.5 font-bold rounded-full border ${
+                  isLiveMicOn
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : 'bg-slate-800 text-slate-400 border-slate-700'
+                }`}>
+                  {lang === 'ar' ? 'متاح للجميع دائماً' : 'Available anytime'}
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-400 font-bold">
+                {lang === 'ar'
+                  ? 'اضغط يفتح / اضغط يقفل — مش لازم تفضل ضاغط عليه'
+                  : 'Tap to open / Tap to close — No need to hold'}
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleToggleLiveMic}
+            className={`px-3.5 py-2.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-md ${
+              isLiveMicOn
+                ? 'bg-rose-600 text-white hover:bg-rose-500 border border-rose-400 animate-pulse'
+                : 'bg-emerald-600 text-white hover:bg-emerald-500 border border-emerald-400'
+            }`}
+          >
+            {isLiveMicOn ? (
+              <>
+                <MicOff className="w-4 h-4 text-white" />
+                <span>{lang === 'ar' ? 'كتم المايك 🔴' : 'Mute Mic 🔴'}</span>
+              </>
+            ) : (
+              <>
+                <Mic className="w-4 h-4 text-white" />
+                <span>{lang === 'ar' ? 'فتح المايك 🎙️' : 'Open Mic 🎙️'}</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {liveMicError && (
+        <div className="px-3 py-1.5 bg-rose-950/70 border border-rose-600/50 rounded-xl text-[11px] font-bold text-rose-300 text-center animate-shake">
+          {liveMicError}
+        </div>
+      )}
 
       {/* 2. SOLVED NOTIFICATION BANNER IF JUST SOLVED */}
       {solvedBanner && (
@@ -895,7 +1029,7 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
                 <button
                   type="button"
                   onClick={toggleAnswerListening}
-                  title={lang === 'ar' ? 'تحدث في المايك' : 'Speak via mic'}
+                  title={lang === 'ar' ? 'اضغط يفتح / اضغط يقفل' : 'Tap to toggle mic'}
                   className={`h-11 px-3.5 rounded-xl border flex items-center justify-center gap-1.5 text-xs font-black transition-all cursor-pointer active:scale-95 shadow-sm ${
                     isAnswerListening
                       ? 'bg-rose-600 text-white border-rose-500 animate-pulse'
@@ -905,7 +1039,11 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
                   }`}
                 >
                   <Mic className="w-4 h-4 text-purple-300" />
-                  <span className="text-[11px]">{lang === 'ar' ? 'مايك 🎙️' : 'Mic 🎙️'}</span>
+                  <span className="text-[11px]">
+                    {isAnswerListening
+                      ? (lang === 'ar' ? 'المايك شغال 🟢 (اضغط للقفل)' : 'Mic ON 🟢')
+                      : (lang === 'ar' ? 'مايك 🎙️ (اضغط يفتح/يقفل)' : 'Mic 🎙️')}
+                  </span>
                 </button>
               </div>
             </div>
@@ -984,21 +1122,26 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
                   <button
                     type="button"
                     onClick={toggleListening}
-                    className={`w-full py-4 rounded-2xl border flex flex-col items-center justify-center gap-2 cursor-pointer transition-all active:scale-98 shadow-md ${
+                    className={`w-full py-4 rounded-2xl border flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-98 shadow-md ${
                       isListening
-                        ? 'bg-rose-500/20 border-rose-500 text-rose-300 animate-pulse'
+                        ? 'bg-rose-500/20 border-rose-500 text-rose-300 ring-2 ring-rose-500/40 animate-pulse'
                         : 'bg-[#1E293B] hover:bg-[#28384f] border-slate-700 text-slate-200'
                     }`}
                   >
                     <div className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-transform ${
-                      isListening ? 'bg-rose-600 scale-110' : 'bg-gradient-to-tr from-purple-600 to-indigo-600'
+                      isListening ? 'bg-rose-600 scale-110 shadow-rose-600/50' : 'bg-gradient-to-tr from-purple-600 to-indigo-600'
                     }`}>
                       <Mic className="w-6 h-6 text-white" />
                     </div>
                     <div className="text-xs font-black">
                       {isListening
-                        ? (lang === 'ar' ? 'جاري الاستماع... تكلم الآن 🔴 (اضغط للإنهاء)' : 'Listening... Speak now 🔴')
-                        : (lang === 'ar' ? 'اضغط هنا وتكلم في المايك 🎙️' : 'Tap here and speak 🎙️')}
+                        ? (lang === 'ar' ? 'المايك شغال ومفتوح 🟢 (تكلم، واضغط هنا لقفله)' : 'Mic is OPEN 🟢 (Speak, tap to stop)')
+                        : (lang === 'ar' ? 'اضغط لفتح المايك والتحدث 🎙️' : 'Tap to open mic and speak 🎙️')}
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-bold">
+                      {isListening
+                        ? (lang === 'ar' ? '⚡ المايك مستمر في الاستماع (مش لازم تفضل ضاغط)' : '⚡ Listening continuously without holding')
+                        : (lang === 'ar' ? 'اضغط يفتح / اضغط يقفل — مش لازم تفضل ضاغط عليه' : 'Tap to open / Tap to close — No need to hold')}
                     </div>
                   </button>
 

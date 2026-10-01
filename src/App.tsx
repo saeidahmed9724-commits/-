@@ -21,6 +21,7 @@ import { CATEGORIES } from './data/categories';
 import { sound } from './utils/audio';
 import { onlineService, OnlineRoomData } from './services/onlineGame';
 import { liveVoiceManager } from './utils/webrtcAudio';
+import { RoomVoiceProvider, useRoomVoice } from './context/RoomVoiceContext';
 
 import { Header } from './components/Header';
 import { HomeScreen } from './components/HomeScreen';
@@ -568,35 +569,45 @@ export default function App() {
     Boolean(player1.name) &&
     Boolean(player2.name);
 
+  const isRoomActive = gamePhase !== 'HOME' && gamePhase !== 'JOIN_GAME';
+  const isOnlineMatch = gameMode === 'ONLINE';
+
   return (
-    <div className="min-h-screen bg-[#070D1E] text-slate-100 flex justify-center items-start sm:py-6 selection:bg-amber-400 selection:text-slate-900 font-['Cairo',sans-serif] relative overflow-x-hidden">
-      {/* Subtle Atmospheric Ambient Glow (Deep Blue & Purple) */}
-      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[650px] h-[320px] bg-gradient-to-b from-blue-600/10 via-purple-600/5 to-transparent blur-3xl pointer-events-none" />
+    <RoomVoiceProvider
+      isRoomActive={isRoomActive}
+      localPlayerId={activePlayerId}
+      isOnlineMatch={isOnlineMatch}
+      onlineRole={onlineRole}
+    >
+      <div className="min-h-screen bg-[#070D1E] text-slate-100 flex justify-center items-start sm:py-6 selection:bg-amber-400 selection:text-slate-900 font-['Cairo',sans-serif] relative overflow-x-hidden">
+        {/* Subtle Atmospheric Ambient Glow (Deep Blue & Purple) */}
+        <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[650px] h-[320px] bg-gradient-to-b from-blue-600/10 via-purple-600/5 to-transparent blur-3xl pointer-events-none" />
 
-      {/* Main Mobile App Container */}
-      <div className="w-full max-w-[440px] min-h-screen sm:min-h-[860px] bg-[#0F172A] sm:rounded-[36px] sm:shadow-2xl sm:border sm:border-slate-800/80 overflow-y-auto flex flex-col relative z-10">
-        {/* Top Header (shown on gameplay, lobby, setup, and reveal screens) */}
-        {gamePhase !== 'HOME' && gamePhase !== 'JOIN_GAME' && (
-          <Header
-            scoreP1={player1.score}
-            scoreP2={player2.score}
-            nameP1={player1.name}
-            nameP2={player2.name}
-            roundNumber={roundNumber}
-            categoryName={gamePhase === 'PLAYING' || gamePhase === 'ROUND_REVEAL' ? (lang === 'ar' ? currentCategory.nameAr : currentCategory.nameEn) : undefined}
-            categoryIcon={gamePhase === 'PLAYING' || gamePhase === 'ROUND_REVEAL' ? currentCategory.icon : undefined}
-            soundEnabled={soundEnabled}
-            onToggleSound={() => setSoundEnabled(!soundEnabled)}
-            onOpenRules={() => setIsRulesOpen(true)}
-            onRestartMatch={handleBackToHome}
-            lang={lang}
-            onToggleLang={() => setLang(lang === 'ar' ? 'en' : 'ar')}
-            showScore={isMatchActive && !gamePhase.startsWith('MULTIPLAYER')}
-          />
-        )}
+        {/* Main Mobile App Container */}
+        <div className="w-full max-w-[440px] min-h-screen sm:min-h-[860px] bg-[#0F172A] sm:rounded-[36px] sm:shadow-2xl sm:border sm:border-slate-800/80 overflow-y-auto flex flex-col relative z-10">
+          {/* Top Header (shown on gameplay, lobby, setup, and reveal screens) */}
+          {isRoomActive && (
+            <GameHeaderWrapper
+              scoreP1={player1.score}
+              scoreP2={player2.score}
+              nameP1={player1.name}
+              nameP2={player2.name}
+              roundNumber={roundNumber}
+              categoryName={gamePhase === 'PLAYING' || gamePhase === 'ROUND_REVEAL' ? (lang === 'ar' ? currentCategory.nameAr : currentCategory.nameEn) : undefined}
+              categoryIcon={gamePhase === 'PLAYING' || gamePhase === 'ROUND_REVEAL' ? currentCategory.icon : undefined}
+              soundEnabled={soundEnabled}
+              onToggleSound={() => setSoundEnabled(!soundEnabled)}
+              onOpenRules={() => setIsRulesOpen(true)}
+              onRestartMatch={handleBackToHome}
+              lang={lang}
+              onToggleLang={() => setLang(lang === 'ar' ? 'en' : 'ar')}
+              showScore={isMatchActive && !gamePhase.startsWith('MULTIPLAYER')}
+              isRoomActive={isRoomActive}
+            />
+          )}
 
-        {/* Main Content Area */}
-        <main className={`flex-1 flex flex-col justify-start items-center w-full ${gamePhase === 'HOME' || gamePhase === 'JOIN_GAME' ? 'p-0' : 'py-2 px-3'}`}>
+          {/* Main Content Area */}
+          <main className={`flex-1 flex flex-col justify-start items-center w-full ${gamePhase === 'HOME' || gamePhase === 'JOIN_GAME' ? 'p-0' : 'py-2 px-3'}`}>
         {/* 1. HOME SCREEN */}
         {gamePhase === 'HOME' && (
           <HomeScreen
@@ -805,9 +816,54 @@ export default function App() {
         lang={lang}
       />
 
-      {/* Rules Walkthrough Modal */}
-      <RulesModal isOpen={isRulesOpen} onClose={() => setIsRulesOpen(false)} lang={lang} />
+        {/* Rules Walkthrough Modal */}
+        <RulesModal isOpen={isRulesOpen} onClose={() => setIsRulesOpen(false)} lang={lang} />
+        </div>
       </div>
-    </div>
+    </RoomVoiceProvider>
+  );
+}
+
+// Subcomponent that consumes RoomVoiceContext to power Header voice state
+function GameHeaderWrapper({
+  scoreP1,
+  scoreP2,
+  nameP1,
+  nameP2,
+  roundNumber,
+  categoryName,
+  categoryIcon,
+  soundEnabled,
+  onToggleSound,
+  onOpenRules,
+  onRestartMatch,
+  lang,
+  onToggleLang,
+  showScore,
+  isRoomActive,
+}: any) {
+  const { isMyMicMuted, isMySpeaking, toggleMyMic } = useRoomVoice();
+
+  return (
+    <Header
+      scoreP1={scoreP1}
+      scoreP2={scoreP2}
+      nameP1={nameP1}
+      nameP2={nameP2}
+      roundNumber={roundNumber}
+      categoryName={categoryName}
+      categoryIcon={categoryIcon}
+      soundEnabled={soundEnabled}
+      onToggleSound={onToggleSound}
+      onOpenRules={onOpenRules}
+      onRestartMatch={onRestartMatch}
+      lang={lang}
+      onToggleLang={onToggleLang}
+      showScore={showScore}
+      isMicAvailable={isRoomActive}
+      isMicMuted={isMyMicMuted}
+      isSpeaking={isMySpeaking}
+      onToggleMic={() => toggleMyMic()}
+    />
   );
 }

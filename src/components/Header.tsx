@@ -1,5 +1,5 @@
 import React from 'react';
-import { Volume2, VolumeX, HelpCircle, RotateCcw } from 'lucide-react';
+import { Volume2, VolumeX, HelpCircle, RotateCcw, Mic, MicOff } from 'lucide-react';
 import { sound } from '../utils/audio';
 import { GameLogoBanner } from './GameLogoBanner';
 
@@ -18,6 +18,10 @@ interface HeaderProps {
   lang: 'ar' | 'en';
   onToggleLang: () => void;
   showScore?: boolean;
+  isMicAvailable?: boolean;
+  isMicMuted?: boolean;
+  isSpeaking?: boolean;
+  onToggleMic?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -32,6 +36,10 @@ export const Header: React.FC<HeaderProps> = ({
   onRestartMatch,
   lang,
   showScore = true,
+  isMicAvailable = false,
+  isMicMuted = true,
+  isSpeaking = false,
+  onToggleMic,
 }) => {
   return (
     <header className="w-full bg-[#0F172A]/90 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40 px-3 py-2.5">
@@ -49,7 +57,44 @@ export const Header: React.FC<HeaderProps> = ({
             <RotateCcw className="w-4 h-4" />
           </button>
 
-          {/* 2. Sound Toggle */}
+          {/* 2. Permanent Room Voice Microphone Toggle */}
+          {isMicAvailable && (
+            <button
+              type="button"
+              onClick={onToggleMic}
+              aria-label="Room Microphone"
+              title={
+                lang === 'ar'
+                  ? isMicMuted
+                    ? 'المايك مقفول (اضغط للتشغيل والتحدث)'
+                    : 'المايك شغال ومفتوح للجميع (اضغط للقفل)'
+                  : isMicMuted
+                  ? 'Mic Muted (Tap to speak)'
+                  : 'Mic Active (Tap to mute)'
+              }
+              className={`w-9 h-9 rounded-xl btn-premium-icon flex items-center justify-center cursor-pointer transition-all relative ${
+                !isMicMuted
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-xs ring-1 ring-emerald-500/30'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {!isMicMuted ? (
+                <>
+                  <Mic className="w-4 h-4 text-emerald-400" />
+                  {isSpeaking && (
+                    <span className="absolute -top-1 -end-1 flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+                    </span>
+                  )}
+                </>
+              ) : (
+                <MicOff className="w-4 h-4 text-slate-400" />
+              )}
+            </button>
+          )}
+
+          {/* 3. Sound Toggle */}
           <button
             type="button"
             onClick={() => {
@@ -67,7 +112,7 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </button>
 
-          {/* 3. Rules Modal */}
+          {/* 4. Rules Modal */}
           <button
             type="button"
             onClick={onOpenRules}
