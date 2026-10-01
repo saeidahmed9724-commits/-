@@ -85,13 +85,26 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose, lang })
             <div className="ps-7 space-y-1 font-medium text-slate-300">
               <div className="flex items-center gap-1.5 text-emerald-400">
                 <Check className="w-4 h-4 shrink-0" />
-                <span>{lang === 'ar' ? 'الخصم يضغط «صح، دي الصورة»: تنتهي الجولة فوراً مع كشف الصورتين ونقطة!' : 'Opponent confirms: round ends with +1 point and reveal!'}</span>
+                <span>{lang === 'ar' ? 'الخصم يضغط «🏆 أيوه، كسبت!»: تنتهي الجولة فوراً مع كشف الصورتين ونقطة!' : 'Opponent confirms: round ends with +1 point and reveal!'}</span>
               </div>
               <div className="flex items-center gap-1.5 text-slate-400">
                 <span className="text-xs">🔄</span>
-                <span>{lang === 'ar' ? 'لو الخصم ضغط «لا، تخمين غلط»: لا توجد خسارة، وتستمر اللعبة عادي ويمكنك التخمين لاحقاً.' : 'Wrong guess has no penalty; game continues normally.'}</span>
+                <span>{lang === 'ar' ? 'لو الإجابة «لا»: لا توجد خسارة، وتستمر اللعبة عادي.' : 'Wrong guess has no penalty; game continues normally.'}</span>
               </div>
             </div>
+          </div>
+
+          {/* Step 5 - Multiplayer 3-4 */}
+          <div className="p-3.5 bg-gradient-to-r from-purple-950/40 to-[#0F172A] rounded-2xl border border-purple-500/50 space-y-1">
+            <div className="font-bold text-white flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-purple-500 text-white font-black flex items-center justify-center text-xs font-mono">👥</span>
+              <span>{lang === 'ar' ? 'نظام 3–4 لاعبين (Multiplayer) 👥' : '3–4 Players Multiplayer Mode 👥'}</span>
+            </div>
+            <p className="text-slate-300 ps-7 font-medium leading-relaxed">
+              {lang === 'ar'
+                ? 'كل لاعب يختار صورة سرية خاصة به، ويحاول في دوره اكتشاف صور المنافسين الآخرين. صاحب الصورة هو من يجيب ويؤكد الفوز بزر «🏆 أيوه، كسبت!»، وكل صورة تُحل تمنحك +1 نقطة.'
+                : 'Each player selects their own secret picture and investigates other players. The image owner answers and confirms wins with "🏆 Yes, You Won!", granting +1 point per solved target.'}
+            </p>
           </div>
         </div>
 

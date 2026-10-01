@@ -547,7 +547,33 @@ wss.on('connection', (ws) => {
         }
       }
 
-      // 7. Make a Guess (Sent to opponent for manual confirmation)
+      // 7. CONFIRM_WIN / DECLARE_WIN: Secret card owner confirms that the asker's question was the winning guess!
+      else if (msg.type === 'CONFIRM_WIN' || msg.type === 'DECLARE_WIN') {
+        if (!userRoomCode || !userRole) return;
+        const room = rooms.get(userRoomCode);
+        if (!room || room.phase !== 'PLAYING') return;
+
+        // The asker is the other player
+        const winnerRole = userRole === 'host' ? 'guest' : 'host';
+        const guessText = msg.question || room.pendingQuestion?.question || '';
+
+        room.phase = 'REVEAL';
+        room.winnerRole = winnerRole;
+        room.correctGuess = guessText;
+        room.pendingQuestion = undefined;
+        room.pendingGuess = undefined;
+
+        if (winnerRole === 'host') room.host.score += 1;
+        else if (room.guest) room.guest.score += 1;
+
+        if (room.host.score >= room.targetScore || (room.guest && room.guest.score >= room.targetScore)) {
+          room.phase = 'GAMEOVER';
+        }
+
+        broadcastRoomState(room);
+      }
+
+      // 7B. Make a Guess (Legacy fallback)
       else if (msg.type === 'MAKE_GUESS') {
         if (!userRoomCode || !userRole) return;
         const room = rooms.get(userRoomCode);

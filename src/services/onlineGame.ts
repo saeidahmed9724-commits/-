@@ -180,6 +180,13 @@ class OnlineGameService {
     });
   }
 
+  declareWin(question?: string) {
+    this.send({
+      type: 'DECLARE_WIN',
+      question,
+    });
+  }
+
   makeGuess(guess: string) {
     this.send({
       type: 'MAKE_GUESS',

@@ -13,6 +13,9 @@ import {
   QuestionRecord,
   AnswerType,
   PendingQuestionData,
+  PlayerCount,
+  MultiplayerPlayer,
+  MultiplayerSecretImage,
 } from './types/game';
 import { CATEGORIES } from './data/categories';
 import { sound } from './utils/audio';
@@ -32,6 +35,10 @@ import { BattleArena } from './components/BattleArena';
 import { RevealScreen } from './components/RevealScreen';
 import { GameOverScreen } from './components/GameOverScreen';
 import { RulesModal } from './components/RulesModal';
+import { PlayerCountModal } from './components/PlayerCountModal';
+import { MultiplayerSetupScreen } from './components/MultiplayerSetupScreen';
+import { MultiplayerChoosePictureScreen } from './components/MultiplayerChoosePictureScreen';
+import { MultiplayerArena } from './components/MultiplayerArena';
 
 export default function App() {
   const [lang, setLang] = useState<'ar' | 'en'>('ar');
@@ -47,6 +54,13 @@ export default function App() {
   const [currentCategory, setCurrentCategory] = useState<CategoryDefinition>(CATEGORIES[0]);
   const [targetScore, setTargetScore] = useState<number>(3);
   const [roundNumber, setRoundNumber] = useState<number>(1);
+
+  // Player Count & Multiplayer Mode (3–4 Players)
+  const [isPlayerCountModalOpen, setIsPlayerCountModalOpen] = useState<boolean>(false);
+  const [playerCount, setPlayerCount] = useState<PlayerCount>(2);
+  const [pendingPlayerCountAction, setPendingPlayerCountAction] = useState<'OFFLINE' | 'ONLINE'>('OFFLINE');
+  const [multiplayerNames, setMultiplayerNames] = useState<string[]>([]);
+  const [multiplayerPlayers, setMultiplayerPlayers] = useState<MultiplayerPlayer[]>([]);
 
   // Online Specific State
   const [onlineRole, setOnlineRole] = useState<'host' | 'guest'>('host');
@@ -250,6 +264,80 @@ export default function App() {
   }, []);
 
   // Home Screen Navigators
+  const handleOpenPlayerCountModal = (action: 'OFFLINE' | 'ONLINE') => {
+    setPendingPlayerCountAction(action);
+    setIsPlayerCountModalOpen(true);
+  };
+
+  const handleSelectPlayerCount = (count: PlayerCount) => {
+    setPlayerCount(count);
+    setIsPlayerCountModalOpen(false);
+
+    if (count === 2) {
+      // Classic 2 Players head-to-head mode (100% intact)
+      if (pendingPlayerCountAction === 'ONLINE') {
+        handlePlayOnline();
+      } else {
+        handlePlayOffline();
+      }
+    } else {
+      // 3 or 4 Players Multiplayer mode
+      setGamePhase('MULTIPLAYER_SETUP');
+    }
+  };
+
+  const handleConfirmMultiplayerSetup = ({
+    playerNames,
+    category,
+  }: {
+    playerNames: string[];
+    category: CategoryDefinition;
+  }) => {
+    setCurrentCategory(category);
+    setMultiplayerNames(playerNames);
+    setGamePhase('MULTIPLAYER_CHOOSE_PICTURES');
+  };
+
+  const handleAllMultiplayerPicturesChosen = (secretImages: MultiplayerSecretImage[]) => {
+    const DEFAULT_COLORS = [
+      'from-emerald-500 to-emerald-700',
+      'from-purple-500 to-indigo-700',
+      'from-amber-500 to-orange-700',
+      'from-rose-500 to-pink-700',
+    ];
+
+    const initialMultiPlayers: MultiplayerPlayer[] = multiplayerNames.map((name, i) => {
+      const pId = `p-${i + 1}`;
+      const mySecret = secretImages.find((img) => img.ownerId === pId);
+
+      // targets = all other players' images
+      const targets = multiplayerNames
+        .map((otherName, otherIdx) => {
+          const otherId = `p-${otherIdx + 1}`;
+          if (otherId === pId) return null; // do NOT include self!
+
+          return {
+            ownerId: otherId,
+            ownerName: otherName,
+            isSolved: false,
+          };
+        })
+        .filter(Boolean) as any[];
+
+      return {
+        id: pId,
+        name,
+        score: 0,
+        avatarColor: DEFAULT_COLORS[i % DEFAULT_COLORS.length],
+        secretImage: mySecret,
+        targets,
+      };
+    });
+
+    setMultiplayerPlayers(initialMultiPlayers);
+    setGamePhase('MULTIPLAYER_PLAYING');
+  };
+
   const handlePlayOnline = () => {
     setGameMode('ROOM_CODE');
     const code = Math.random().toString(36).substring(2, 7).toUpperCase();
@@ -355,6 +443,11 @@ export default function App() {
 
   const handleOnlineGuess = (guess: string) => {
     onlineService.makeGuess(guess);
+  };
+
+  const handleOnlineDeclareWin = (question?: string) => {
+    onlineService.declareWin(question);
+    setPendingQuestionRemote(null);
   };
 
   const handleOnlineResolveGuess = (isCorrect: boolean) => {
@@ -498,7 +591,7 @@ export default function App() {
             onRestartMatch={handleBackToHome}
             lang={lang}
             onToggleLang={() => setLang(lang === 'ar' ? 'en' : 'ar')}
-            showScore={isMatchActive}
+            showScore={isMatchActive && !gamePhase.startsWith('MULTIPLAYER')}
           />
         )}
 
@@ -507,14 +600,15 @@ export default function App() {
         {/* 1. HOME SCREEN */}
         {gamePhase === 'HOME' && (
           <HomeScreen
-            onCreateOnlineGame={handlePlayOnline}
+            onCreateOnlineGame={() => handleOpenPlayerCountModal('ONLINE')}
             onJoinRoom={() => {
               setInitialJoinCode('');
               setGamePhase('JOIN_GAME');
             }}
-            onPlayOffline={handlePlayOffline}
+            onPlayOffline={() => handleOpenPlayerCountModal('OFFLINE')}
             onPlayWithAI={handlePlayWithAI}
             onOpenRules={() => setIsRulesOpen(true)}
+            onOpenMultiplayer={() => handleOpenPlayerCountModal('OFFLINE')}
             lang={lang}
             soundEnabled={soundEnabled}
             onToggleSound={() => setSoundEnabled(!soundEnabled)}
@@ -628,6 +722,7 @@ export default function App() {
             onOnlineAsk={handleOnlineAsk}
             onOnlineAnswer={handleOnlineAnswer}
             onOnlineGuess={handleOnlineGuess}
+            onOnlineDeclareWin={handleOnlineDeclareWin}
             pendingQuestionRemote={pendingQuestionRemote}
             pendingGuessRemote={pendingGuessRemote}
             onOnlineResolveGuess={handleOnlineResolveGuess}
@@ -660,7 +755,46 @@ export default function App() {
             lang={lang}
           />
         )}
+
+        {/* 9A. MULTIPLAYER SETUP SCREEN (3–4 PLAYERS) */}
+        {gamePhase === 'MULTIPLAYER_SETUP' && (
+          <MultiplayerSetupScreen
+            playerCount={playerCount}
+            onConfirmSetup={handleConfirmMultiplayerSetup}
+            onBack={() => setGamePhase('HOME')}
+            lang={lang}
+          />
+        )}
+
+        {/* 9B. MULTIPLAYER CHOOSE SECRET PICTURES */}
+        {gamePhase === 'MULTIPLAYER_CHOOSE_PICTURES' && (
+          <MultiplayerChoosePictureScreen
+            playerNames={multiplayerNames}
+            category={currentCategory}
+            onAllPicturesChosen={handleAllMultiplayerPicturesChosen}
+            lang={lang}
+          />
+        )}
+
+        {/* 9C. MULTIPLAYER ARENA (MAIN PLAYING TABLE) */}
+        {gamePhase === 'MULTIPLAYER_PLAYING' && multiplayerPlayers.length > 0 && (
+          <MultiplayerArena
+            initialPlayers={multiplayerPlayers}
+            category={currentCategory}
+            onPlayAgain={() => setGamePhase('MULTIPLAYER_CHOOSE_PICTURES')}
+            onBackToHome={() => setGamePhase('HOME')}
+            lang={lang}
+          />
+        )}
       </main>
+
+      {/* Player Count Selector Modal (2 Players, 3 Players, 4 Players) */}
+      <PlayerCountModal
+        isOpen={isPlayerCountModalOpen}
+        onClose={() => setIsPlayerCountModalOpen(false)}
+        onSelectCount={handleSelectPlayerCount}
+        lang={lang}
+      />
 
       {/* Join Room Modal */}
       <JoinRoomModal

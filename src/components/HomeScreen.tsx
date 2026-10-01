@@ -10,6 +10,7 @@ interface HomeScreenProps {
   onPlayOffline: () => void;
   onPlayWithAI: () => void;
   onOpenRules: () => void;
+  onOpenMultiplayer?: () => void;
   lang: 'ar' | 'en';
   soundEnabled?: boolean;
   onToggleSound?: () => void;
@@ -21,6 +22,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onPlayOffline,
   onPlayWithAI,
   onOpenRules,
+  onOpenMultiplayer,
   lang,
   soundEnabled = true,
   onToggleSound,
@@ -65,6 +67,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           className="absolute z-10 cursor-pointer rounded-full transition-all duration-150 active:scale-95 hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-blue-400 outline-none"
           style={{ top: '2.0%', left: '12.0%', width: '24.2%', height: '4.2%' }}
         />
+
+        {/* --- Floating Multiplayer Mode Badge: 👥 3-4 لاعبين --- */}
+        {onOpenMultiplayer && (
+          <button
+            type="button"
+            onClick={() => {
+              sound.playTurnChime();
+              onOpenMultiplayer();
+            }}
+            title={lang === 'ar' ? 'العب مع 3 أو 4 لاعبين' : 'Play with 3-4 Players'}
+            className="absolute z-20 cursor-pointer rounded-full px-3.5 py-1 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:brightness-110 text-white font-black text-[11px] shadow-xl border border-purple-300/40 hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 animate-pulse"
+            style={{ top: '7.6%', left: '50%', transform: 'translateX(-50%)' }}
+          >
+            <span>👥</span>
+            <span>{lang === 'ar' ? 'طور 3–4 لاعبين (جديد!)' : '3-4 Players Mode (New!)'}</span>
+          </button>
+        )}
 
         {/* --- Top Bar: Round 1 Pill Indicator --- */}
         <div

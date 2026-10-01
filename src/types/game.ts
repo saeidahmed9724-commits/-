@@ -10,7 +10,10 @@ export type GamePhase =
   | 'PICTURES_LOCKED_COUNTDOWN'
   | 'PLAYING'
   | 'ROUND_REVEAL'
-  | 'GAME_OVER';
+  | 'GAME_OVER'
+  | 'MULTIPLAYER_SETUP'
+  | 'MULTIPLAYER_CHOOSE_PICTURES'
+  | 'MULTIPLAYER_PLAYING';
 
 export type AnswerType = 'YES' | 'NO' | 'SOMETIMES' | 'NOT_SURE';
 
@@ -88,4 +91,51 @@ export interface RoomState {
   category: CategoryDefinition;
   targetScore: number;
   isGuestJoined: boolean;
+}
+
+// ==========================================
+// MULTIPLAYER (3–4 PLAYERS) SYSTEM TYPES
+// ==========================================
+
+export type PlayerCount = 2 | 3 | 4;
+
+export interface MultiplayerSecretImage {
+  id: string;
+  ownerId: string;
+  ownerName: string;
+  title: string;
+  imageUrl: string;
+  category: string;
+}
+
+export interface MultiplayerTargetProgress {
+  ownerId: string;
+  ownerName: string;
+  isSolved: boolean;
+  solvedAtTimestamp?: number;
+  revealedImage?: MultiplayerSecretImage;
+}
+
+export interface MultiplayerPlayer {
+  id: string;
+  name: string;
+  score: number;
+  avatarColor: string;
+  secretImage?: MultiplayerSecretImage;
+  targets: MultiplayerTargetProgress[];
+}
+
+export interface MultiplayerQuestionRecord {
+  id: string;
+  question: string;
+  isVoice?: boolean;
+  isVoiceAnswer?: boolean;
+  askerId: string;
+  askerName: string;
+  targetOwnerId: string;
+  targetOwnerName: string;
+  answer: AnswerType;
+  note?: string;
+  timestamp: number;
+  wasWinningGuess?: boolean;
 }
