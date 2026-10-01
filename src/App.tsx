@@ -17,6 +17,7 @@ import {
 import { CATEGORIES } from './data/categories';
 import { sound } from './utils/audio';
 import { onlineService, OnlineRoomData } from './services/onlineGame';
+import { liveVoiceManager } from './utils/webrtcAudio';
 
 import { Header } from './components/Header';
 import { HomeScreen } from './components/HomeScreen';
@@ -142,6 +143,9 @@ export default function App() {
             room.questions.map((q) => ({
               id: q.id,
               question: q.question,
+              isVoice: q.isVoice,
+              isVoiceAnswer: (q as any).isVoiceAnswer,
+              audioData: q.audioData,
               askedByPlayerId: q.askedByRole === 'host' ? 'p1' : 'p2',
               answeredByPlayerId: q.answeredByRole === 'host' ? 'p1' : 'p2',
               answer: q.answer,
@@ -230,11 +234,18 @@ export default function App() {
       } else if (event.type === 'GUESS_REJECTED' || event.type === 'WRONG_GUESS') {
         sound.playWrongBuzzer();
         setPendingGuessRemote(null);
+      } else if (event.type === 'VOICE_SIGNAL' && (event as any).signal) {
+        liveVoiceManager.handleSignal((event as any).signal);
       }
+    });
+
+    liveVoiceManager.setSignalCallback((signal) => {
+      onlineService.sendVoiceSignal(signal);
     });
 
     return () => {
       unsubscribe();
+      liveVoiceManager.stop();
     };
   }, []);
 
@@ -328,12 +339,17 @@ export default function App() {
   };
 
   // Online Real-time Actions
-  const handleOnlineAsk = (question: string) => {
-    onlineService.askQuestion(question);
+  const handleOnlineAsk = (question: string, isVoice?: boolean, audioData?: string) => {
+    onlineService.askQuestion(question, isVoice, audioData);
   };
 
-  const handleOnlineAnswer = (answer: AnswerType, question: string, note?: string) => {
-    onlineService.answerQuestion(question, answer, note);
+  const handleOnlineAnswer = (
+    answer: AnswerType,
+    question: string,
+    note?: string,
+    isVoiceAnswer?: boolean
+  ) => {
+    onlineService.answerQuestion(question, answer, note, undefined, isVoiceAnswer);
     setPendingQuestionRemote(null);
   };
 
@@ -347,11 +363,21 @@ export default function App() {
   };
 
   // Offline Question flow
-  const handleAddQuestionAndAnswer = (question: string, answer: AnswerType, note?: string) => {
+  const handleAddQuestionAndAnswer = (
+    question: string,
+    answer: AnswerType,
+    note?: string,
+    isVoice?: boolean,
+    audioData?: string,
+    isVoiceAnswer?: boolean
+  ) => {
     const respondentId = activePlayerId === player1.id ? player2.id : player1.id;
     const newRecord: QuestionRecord = {
       id: 'q-' + Date.now(),
       question,
+      isVoice,
+      isVoiceAnswer,
+      audioData,
       askedByPlayerId: activePlayerId,
       answeredByPlayerId: respondentId,
       answer,
@@ -457,7 +483,7 @@ export default function App() {
       {/* Main Mobile App Container */}
       <div className="w-full max-w-[440px] min-h-screen sm:min-h-[860px] bg-[#0F172A] sm:rounded-[36px] sm:shadow-2xl sm:border sm:border-slate-800/80 overflow-y-auto flex flex-col relative z-10">
         {/* Top Header (shown on gameplay, lobby, setup, and reveal screens) */}
-        {gamePhase !== 'HOME' && (
+        {gamePhase !== 'HOME' && gamePhase !== 'JOIN_GAME' && (
           <Header
             scoreP1={player1.score}
             scoreP2={player2.score}
@@ -477,7 +503,7 @@ export default function App() {
         )}
 
         {/* Main Content Area */}
-        <main className={`flex-1 flex flex-col justify-start items-center w-full ${gamePhase === 'HOME' ? 'p-0' : 'py-2 px-3'}`}>
+        <main className={`flex-1 flex flex-col justify-start items-center w-full ${gamePhase === 'HOME' || gamePhase === 'JOIN_GAME' ? 'p-0' : 'py-2 px-3'}`}>
         {/* 1. HOME SCREEN */}
         {gamePhase === 'HOME' && (
           <HomeScreen
@@ -503,6 +529,9 @@ export default function App() {
             onCreateNewGame={handlePlayOnline}
             onBack={() => setGamePhase('HOME')}
             lang={lang}
+            soundEnabled={soundEnabled}
+            onToggleSound={() => setSoundEnabled(!soundEnabled)}
+            onOpenRules={() => setIsRulesOpen(true)}
           />
         )}
 

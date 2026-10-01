@@ -46,6 +46,9 @@ export interface PlayerChoice {
 export interface QuestionRecord {
   id: string;
   question: string;
+  isVoice?: boolean;
+  isVoiceAnswer?: boolean;
+  audioData?: string;
   askedByPlayerId: string;
   answeredByPlayerId: string;
   answer: AnswerType;
@@ -64,6 +67,8 @@ export interface PendingGuess {
 export interface PendingQuestionData {
   id: string;
   question: string;
+  isVoice?: boolean;
+  audioData?: string;
   askedByRole: 'host' | 'guest';
   answeredByRole: 'host' | 'guest';
 }

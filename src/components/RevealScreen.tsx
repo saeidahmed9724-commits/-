@@ -77,33 +77,59 @@ export const RevealScreen: React.FC<RevealScreenProps> = ({
             {p1.name}
           </div>
 
-          <div className="perspective-1000 w-full aspect-[3/4] max-w-[200px]">
+          <div
+            className="perspective-1000 w-full aspect-[3/4] max-w-[200px] cursor-pointer"
+            onClick={() => {
+              setIsFlipped(!isFlipped);
+              sound.playCardFlip();
+            }}
+            title={lang === 'ar' ? 'اضغط لقلب البطاقة' : 'Tap to flip card'}
+          >
             <div
-              className={`relative w-full h-full rounded-2xl transition-transform duration-700 preserve-3d border border-slate-700 shadow-xl ${
+              className={`relative w-full h-full rounded-2xl transition-transform duration-700 shadow-xl ${
                 isFlipped ? 'rotate-y-180' : ''
               }`}
+              style={{
+                transformStyle: 'preserve-3d',
+                WebkitTransformStyle: 'preserve-3d',
+              }}
             >
               {/* Card Back (Locked mystery state) */}
-              <div className="absolute inset-0 bg-[#0F172A] text-white rounded-2xl p-4 flex flex-col items-center justify-center backface-hidden border border-amber-500/30">
-                <span className="text-3xl mb-1 text-amber-400">🔒</span>
+              <div
+                className="absolute inset-0 bg-[#0F172A] text-white rounded-2xl p-4 flex flex-col items-center justify-center border-2 border-amber-500/40 shadow-xl"
+                style={{
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                }}
+              >
+                <span className="text-4xl mb-1 text-amber-400 animate-pulse">🔒</span>
                 <span className="font-mono font-black text-2xl text-amber-400">???</span>
+                <span className="text-[10px] text-slate-400 mt-1 font-bold">
+                  {lang === 'ar' ? 'اضغط للقلب' : 'Tap to flip'}
+                </span>
               </div>
 
               {/* Card Front (Revealed Item) */}
-              <div className="absolute inset-0 bg-[#1E293B] text-white rounded-2xl p-3 flex flex-col items-center justify-between backface-hidden rotate-y-180 border border-slate-600">
-                <div className="w-full text-end text-[10px] font-bold text-slate-400">
+              <div
+                className="absolute inset-0 bg-gradient-to-br from-[#1E293B] to-[#0F172A] text-white rounded-2xl p-3 flex flex-col items-center justify-between border-2 border-blue-500/50 shadow-2xl rotate-y-180"
+                style={{
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                }}
+              >
+                <div className="w-full text-end text-[10px] font-bold text-blue-300">
                   {p1Card.category}
                 </div>
 
-                <div className="aspect-square w-full rounded-xl bg-[#0F172A] border border-slate-700 flex items-center justify-center p-2 overflow-hidden">
+                <div className="aspect-square w-full rounded-xl bg-[#0B132B] border border-slate-700/80 flex items-center justify-center p-2 overflow-hidden shadow-inner">
                   <img
                     src={p1Card.imageUrl}
                     alt={p1Card.title}
-                    className="w-full h-full object-contain"
+                    className="w-full h-full object-contain drop-shadow-md"
                   />
                 </div>
 
-                <div className="text-sm font-black text-slate-100 uppercase tracking-wide truncate max-w-full">
+                <div className="text-sm font-black text-amber-300 uppercase tracking-wide truncate max-w-full drop-shadow-sm">
                   {p1Card.title}
                 </div>
               </div>
@@ -124,33 +150,59 @@ export const RevealScreen: React.FC<RevealScreenProps> = ({
             {p2.name}
           </div>
 
-          <div className="perspective-1000 w-full aspect-[3/4] max-w-[200px]">
+          <div
+            className="perspective-1000 w-full aspect-[3/4] max-w-[200px] cursor-pointer"
+            onClick={() => {
+              setIsFlipped(!isFlipped);
+              sound.playCardFlip();
+            }}
+            title={lang === 'ar' ? 'اضغط لقلب البطاقة' : 'Tap to flip card'}
+          >
             <div
-              className={`relative w-full h-full rounded-2xl transition-transform duration-700 preserve-3d border border-slate-700 shadow-xl ${
+              className={`relative w-full h-full rounded-2xl transition-transform duration-700 shadow-xl ${
                 isFlipped ? 'rotate-y-180' : ''
               }`}
+              style={{
+                transformStyle: 'preserve-3d',
+                WebkitTransformStyle: 'preserve-3d',
+              }}
             >
               {/* Card Back */}
-              <div className="absolute inset-0 bg-[#0F172A] text-white rounded-2xl p-4 flex flex-col items-center justify-center backface-hidden border border-amber-500/30">
-                <span className="text-3xl mb-1 text-amber-400">🔒</span>
+              <div
+                className="absolute inset-0 bg-[#0F172A] text-white rounded-2xl p-4 flex flex-col items-center justify-center border-2 border-amber-500/40 shadow-xl"
+                style={{
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                }}
+              >
+                <span className="text-4xl mb-1 text-amber-400 animate-pulse">🔒</span>
                 <span className="font-mono font-black text-2xl text-amber-400">???</span>
+                <span className="text-[10px] text-slate-400 mt-1 font-bold">
+                  {lang === 'ar' ? 'اضغط للقلب' : 'Tap to flip'}
+                </span>
               </div>
 
               {/* Card Front */}
-              <div className="absolute inset-0 bg-[#1E293B] text-white rounded-2xl p-3 flex flex-col items-center justify-between backface-hidden rotate-y-180 border border-slate-600">
-                <div className="w-full text-end text-[10px] font-bold text-slate-400">
+              <div
+                className="absolute inset-0 bg-gradient-to-br from-[#1E293B] to-[#0F172A] text-white rounded-2xl p-3 flex flex-col items-center justify-between border-2 border-purple-500/50 shadow-2xl rotate-y-180"
+                style={{
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                }}
+              >
+                <div className="w-full text-end text-[10px] font-bold text-purple-300">
                   {p2Card.category}
                 </div>
 
-                <div className="aspect-square w-full rounded-xl bg-[#0F172A] border border-slate-700 flex items-center justify-center p-2 overflow-hidden">
+                <div className="aspect-square w-full rounded-xl bg-[#0B132B] border border-slate-700/80 flex items-center justify-center p-2 overflow-hidden shadow-inner">
                   <img
                     src={p2Card.imageUrl}
                     alt={p2Card.title}
-                    className="w-full h-full object-contain"
+                    className="w-full h-full object-contain drop-shadow-md"
                   />
                 </div>
 
-                <div className="text-sm font-black text-slate-100 uppercase tracking-wide truncate max-w-full">
+                <div className="text-sm font-black text-amber-300 uppercase tracking-wide truncate max-w-full drop-shadow-sm">
                   {p2Card.title}
                 </div>
               </div>
@@ -164,6 +216,21 @@ export const RevealScreen: React.FC<RevealScreenProps> = ({
             </div>
           )}
         </div>
+      </div>
+
+      {/* Interactive Card Flip Button */}
+      <div className="flex justify-center pt-1">
+        <button
+          type="button"
+          onClick={() => {
+            setIsFlipped(!isFlipped);
+            sound.playCardFlip();
+          }}
+          className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-[#1E293B] hover:bg-slate-700 border border-slate-700 rounded-full text-xs font-bold text-slate-300 hover:text-white transition-all cursor-pointer active:scale-95 shadow-sm"
+        >
+          <span>🔄</span>
+          <span>{lang === 'ar' ? (isFlipped ? 'إخفاء البطاقات 🔒' : 'اقلب واكشف البطاقات 👁️') : 'Flip Cards 🔄'}</span>
+        </button>
       </div>
 
       {/* 3. Next Round Big Tactile CTA */}

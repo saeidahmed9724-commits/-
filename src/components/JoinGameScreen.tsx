@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Play, ArrowLeft, Clipboard, AlertCircle, User, KeyRound, Sparkles } from 'lucide-react';
 import { sound } from '../utils/audio';
-import { GameLogoBanner } from './GameLogoBanner';
+
+export const JOIN_GAME_BG_URL =
+  'https://res.cloudinary.com/utefkiln/image/upload/v1790795454/ChatGPT_Image_30_%D8%B3%D8%A8%D8%AA%D9%85%D8%A8%D8%B1_2026_09_59_58_%D9%85_jjoqje.png';
 
 interface JoinGameScreenProps {
   initialCode?: string;
@@ -9,6 +10,9 @@ interface JoinGameScreenProps {
   onCreateNewGame: () => void;
   onBack: () => void;
   lang: 'ar' | 'en';
+  soundEnabled?: boolean;
+  onToggleSound?: () => void;
+  onOpenRules?: () => void;
 }
 
 export const JoinGameScreen: React.FC<JoinGameScreenProps> = ({
@@ -17,11 +21,15 @@ export const JoinGameScreen: React.FC<JoinGameScreenProps> = ({
   onCreateNewGame,
   onBack,
   lang,
+  soundEnabled = true,
+  onToggleSound,
+  onOpenRules,
 }) => {
   const [code, setCode] = useState<string>(initialCode.toUpperCase());
   const [playerName, setPlayerName] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [imageLoaded, setImageLoaded] = useState<boolean>(false);
 
   const handlePasteCode = async () => {
     try {
@@ -51,11 +59,13 @@ export const JoinGameScreen: React.FC<JoinGameScreenProps> = ({
 
     if (!cleanCode) {
       setErrorMessage(lang === 'ar' ? 'من فضلك أدخل كود الغرفة' : 'Please enter room code');
+      sound.playWrongBuzzer();
       return;
     }
 
     if (cleanCode.length < 4) {
       setErrorMessage(lang === 'ar' ? 'كود الغرفة غير مكتمل' : 'Room code is incomplete');
+      sound.playWrongBuzzer();
       return;
     }
 
@@ -77,162 +87,196 @@ export const JoinGameScreen: React.FC<JoinGameScreenProps> = ({
     }
   };
 
-  // Convert code to individual character boxes (5 to 6 slots)
-  const codeChars = code.padEnd(5, ' ').slice(0, 6).split('');
+  // Convert code to individual character slots (6 slots)
+  const codeChars = code.padEnd(6, ' ').slice(0, 6).split('');
 
   return (
-    <div className="w-full max-w-md mx-auto py-2 px-3 animate-scale-up space-y-4 pb-6 select-none">
-      {/* Top Bar: Back & Mini Logo */}
-      <div className="flex items-center justify-between">
+    <div className="w-full flex items-center justify-center min-h-screen py-1 px-1 sm:py-3 sm:px-2 animate-fade-in select-none">
+      {/* Container with exact aspect ratio of the 899x1748 image */}
+      <div className="w-full max-w-[430px] aspect-[899/1748] relative rounded-3xl sm:rounded-[36px] overflow-hidden shadow-2xl bg-[#070D1E] border border-slate-800/80">
+        {/* Placeholder / Shimmer while loading */}
+        {!imageLoaded && (
+          <div className="absolute inset-0 bg-gradient-to-b from-[#0F172A] via-[#1E293B] to-[#070D1E] animate-pulse flex items-center justify-center">
+            <span className="text-sm font-bold text-slate-400">
+              {lang === 'ar' ? 'جاري التحميل...' : 'Loading...'}
+            </span>
+          </div>
+        )}
+
+        {/* 1. Official High-Fidelity Background Image Asset */}
+        <img
+          src={JOIN_GAME_BG_URL}
+          alt={lang === 'ar' ? 'انضمام بكود الغرفة' : 'Join with Room Code'}
+          className={`absolute inset-0 w-full h-full object-cover select-none pointer-events-none transition-opacity duration-300 ${
+            imageLoaded ? 'opacity-100' : 'opacity-0'
+          }`}
+          loading="eager"
+          decoding="async"
+          onLoad={() => setImageLoaded(true)}
+        />
+
+        {/* ========================================================================= */}
+        {/* 2. TOP BAR CONTROLS                                                       */}
+        {/* ========================================================================= */}
+
+        {/* Help (?) Button */}
+        <button
+          type="button"
+          onClick={() => {
+            sound.playCardFlip();
+            onOpenRules?.();
+          }}
+          title={lang === 'ar' ? 'طريقة اللعب والمساعدة' : 'Rules & Help'}
+          aria-label="Rules and Help"
+          className="absolute z-10 cursor-pointer rounded-full transition-all duration-150 active:scale-90 hover:bg-white/20 outline-none"
+          style={{ top: '1.8%', left: '63.7%', width: '8.2%', height: '4.2%' }}
+        />
+
+        {/* Sound Speaker Button */}
+        <button
+          type="button"
+          onClick={() => {
+            if (onToggleSound) {
+              onToggleSound();
+              sound.playTurnChime();
+            }
+          }}
+          title={soundEnabled ? (lang === 'ar' ? 'كتم الصوت' : 'Mute') : (lang === 'ar' ? 'تشغيل الصوت' : 'Unmute')}
+          aria-label="Sound Toggle"
+          className="absolute z-10 cursor-pointer rounded-full transition-all duration-150 active:scale-90 hover:bg-white/20 outline-none flex items-center justify-center"
+          style={{ top: '1.8%', left: '73.7%', width: '8.2%', height: '4.2%' }}
+        >
+          {!soundEnabled && (
+            <div className="w-4 h-0.5 bg-rose-500 rounded-full rotate-45 shadow-sm pointer-events-none" />
+          )}
+        </button>
+
+        {/* Settings Button */}
+        <button
+          type="button"
+          onClick={() => {
+            sound.playCardFlip();
+            onOpenRules?.();
+          }}
+          title={lang === 'ar' ? 'الإعدادات والقواعد' : 'Settings & Rules'}
+          aria-label="Settings"
+          className="absolute z-10 cursor-pointer rounded-full transition-all duration-150 active:scale-90 hover:bg-white/20 outline-none"
+          style={{ top: '1.8%', left: '83.7%', width: '8.2%', height: '4.2%' }}
+        />
+
+        {/* ========================================================================= */}
+        {/* 3. BACK BUTTON (< رجوع)                                                   */}
+        {/* ========================================================================= */}
         <button
           type="button"
           onClick={() => {
             sound.playCardFlip();
             onBack();
           }}
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white bg-slate-800/80 px-3.5 py-1.5 rounded-xl border border-slate-700 cursor-pointer active:scale-95 transition-colors"
-        >
-          <ArrowLeft className={`w-3.5 h-3.5 ${lang === 'ar' ? 'rotate-180' : ''}`} />
-          <span>{lang === 'ar' ? 'رجوع' : 'Back'}</span>
-        </button>
+          title={lang === 'ar' ? 'رجوع' : 'Back'}
+          aria-label={lang === 'ar' ? 'رجوع' : 'Back'}
+          className="absolute z-10 cursor-pointer rounded-full transition-all duration-150 active:scale-95 hover:bg-white/15 outline-none"
+          style={{ top: '7.8%', left: '7.8%', width: '21.2%', height: '3.8%' }}
+        />
 
-        <GameLogoBanner size="sm" className="max-w-[100px]" />
-      </div>
-
-      {/* Main Elevated Card Surface */}
-      <div className="game-card-surface p-6 sm:p-7 space-y-5 border border-slate-700/60">
-        {/* Header Icon & Title */}
-        <div className="text-center space-y-1.5">
-          <div className="w-12 h-12 rounded-2xl bg-blue-500/15 border border-blue-500/30 text-blue-400 flex items-center justify-center mx-auto mb-2 shadow-sm">
-            <KeyRound className="w-6 h-6" />
+        {/* ========================================================================= */}
+        {/* 4. FORM INTERACTIVE CONTROLS OVERLAYS                                     */}
+        {/* ========================================================================= */}
+        <form onSubmit={handleSubmit}>
+          {/* Name Input Field (اكتب اسمك هنا...) */}
+          <div
+            className="absolute z-10 flex items-center px-4"
+            style={{ top: '45.3%', left: '11.3%', width: '77.4%', height: '5.5%' }}
+          >
+            <input
+              type="text"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              placeholder={lang === 'ar' ? 'اكتب اسمك هنا...' : 'Enter your name...'}
+              className="w-full h-full bg-transparent text-white font-bold text-sm sm:text-base outline-none placeholder:text-slate-500/70 border-none px-2 focus:ring-0"
+              dir={lang === 'ar' ? 'rtl' : 'ltr'}
+            />
           </div>
 
-          <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            {lang === 'ar' ? 'انضمام بكود الغرفة' : 'Join with Room Code'}
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-400 font-bold max-w-xs mx-auto">
-            {lang === 'ar'
-              ? 'أدخل كود الغرفة الذي أرسله لك صديقك'
-              : 'Enter the room code shared by your friend'}
-          </p>
-        </div>
+          {/* Paste Code Button (لصق الكود) */}
+          <button
+            type="button"
+            onClick={handlePasteCode}
+            title={lang === 'ar' ? 'لصق الكود' : 'Paste Code'}
+            aria-label={lang === 'ar' ? 'لصق الكود' : 'Paste Code'}
+            className="absolute z-10 cursor-pointer rounded-xl transition-all duration-150 active:scale-95 hover:bg-white/10 outline-none"
+            style={{ top: '53.0%', left: '11.4%', width: '24.1%', height: '3.9%' }}
+          />
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Name Input */}
-          <div>
-            <label className="block text-xs font-bold text-slate-300 mb-1 px-1">
-              {lang === 'ar' ? 'اسمك' : 'Your Name'}
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                required
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                placeholder={lang === 'ar' ? 'اكتب اسمك هنا...' : 'Enter your name...'}
-                className="w-full h-12 bg-[#0F172A] border border-slate-700 focus:border-blue-500 rounded-xl ps-4 pe-10 text-sm font-bold text-white placeholder:text-slate-500 focus:outline-none transition-colors"
-              />
-              <User className="w-4 h-4 text-slate-500 absolute end-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          {/* 6-Slot Code Input Boxes */}
+          <div
+            className="absolute z-10 flex items-center justify-between cursor-text"
+            style={{ top: '59.2%', left: '11.3%', width: '77.4%', height: '7.3%' }}
+          >
+            {/* Real hidden text input capturing keystrokes */}
+            <input
+              type="text"
+              value={code}
+              onChange={handleCodeChange}
+              maxLength={6}
+              autoFocus
+              className="absolute inset-0 w-full h-full opacity-0 cursor-text z-20"
+            />
+
+            {/* Individual Slot Characters Rendering Over Image's Slot Boxes */}
+            <div className="w-full h-full flex items-center justify-around px-2 pointer-events-none">
+              {codeChars.map((char, idx) => (
+                <div
+                  key={idx}
+                  className="flex-1 flex items-center justify-center font-mono font-black text-xl sm:text-2xl text-amber-400 drop-shadow-md select-none"
+                >
+                  {char.trim() ? char : ''}
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Room Code Section with Separate Letter Tiles */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between px-1">
-              <label className="text-xs font-bold text-slate-300">
-                {lang === 'ar' ? 'كود الغرفة' : 'Room Code'}
-              </label>
-
-              <button
-                type="button"
-                onClick={handlePasteCode}
-                className="text-[11px] font-bold text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 px-2.5 py-1 rounded-lg flex items-center gap-1 cursor-pointer transition-colors active:scale-95"
-              >
-                <Clipboard className="w-3.5 h-3.5" />
-                <span>{lang === 'ar' ? 'لصق الكود' : 'Paste Code'}</span>
-              </button>
-            </div>
-
-            {/* Hidden Input Layer for Typing on Mobile */}
-            <div className="relative">
-              <input
-                type="text"
-                value={code}
-                onChange={handleCodeChange}
-                maxLength={6}
-                autoFocus
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 text-center tracking-widest text-transparent"
-              />
-
-              {/* Visual Interactive Squircle Tiles Container */}
-              <div className="w-full bg-[#0F172A] border border-slate-700/80 rounded-2xl p-3 flex items-center justify-center gap-2 shadow-inner">
-                {codeChars.map((char, idx) => (
-                  <div
-                    key={idx}
-                    className={`w-11 sm:w-13 h-14 rounded-xl flex items-center justify-center font-mono text-2xl font-black transition-all ${
-                      char.trim()
-                        ? 'bg-[#1E293B] border-2 border-amber-500 text-amber-400 shadow-md scale-102'
-                        : 'bg-slate-800/40 border border-slate-700 text-slate-600'
-                    }`}
-                  >
-                    {char.trim() ? char : '·'}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <p className="text-[11px] text-center font-medium text-slate-500">
-              {lang === 'ar'
-                ? 'الكود يتكون من 5 أو 6 أحرف وأرقام'
-                : 'Room code consists of 5 or 6 characters'}
-            </p>
-          </div>
-
-          {/* Error Notice */}
+          {/* Error Message Toast Overlay */}
           {errorMessage && (
-            <div className="p-3 bg-rose-950/40 border border-rose-600/50 rounded-xl text-xs font-bold text-rose-300 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            <div
+              className="absolute z-20 px-3 py-1.5 bg-rose-950/90 border border-rose-500/80 rounded-xl text-[11px] font-bold text-rose-200 shadow-xl flex items-center justify-center text-center animate-shake"
+              style={{ top: '67.8%', left: '11.3%', width: '77.4%' }}
+            >
               <span>{errorMessage}</span>
             </div>
           )}
 
-          {/* Primary CTA Button */}
-          <div className="pt-2">
-            <button
-              type="submit"
-              disabled={isLoading || !code.trim()}
-              className="w-full h-14 btn-premium-blue rounded-2xl font-black text-base sm:text-lg flex items-center justify-center gap-2.5 cursor-pointer shadow-lg active:scale-98 disabled:opacity-50"
-            >
-              <Play className="w-4 h-4 fill-white text-white" />
-              <span>
-                {isLoading
-                  ? lang === 'ar'
-                    ? 'جاري الاتصال...'
-                    : 'Connecting...'
-                  : lang === 'ar'
-                  ? 'انضم إلى اللعبة'
-                  : 'Join Game'}
+          {/* Main CTA Button: انضم إلى اللعبة */}
+          <button
+            type="submit"
+            disabled={isLoading}
+            title={lang === 'ar' ? 'انضم إلى اللعبة' : 'Join Game'}
+            aria-label={lang === 'ar' ? 'انضم إلى اللعبة' : 'Join Game'}
+            className="absolute z-10 cursor-pointer rounded-[28px] sm:rounded-[32px] transition-all duration-150 active:scale-[0.98] hover:bg-amber-400/20 active:bg-amber-600/30 focus-visible:ring-4 focus-visible:ring-amber-400/50 outline-none flex items-center justify-center"
+            style={{ top: '72.9%', left: '11.3%', width: '77.4%', height: '7.5%' }}
+          >
+            {isLoading && (
+              <span className="font-bold text-sm text-slate-900 bg-amber-400/80 px-4 py-1.5 rounded-full shadow-md animate-pulse">
+                {lang === 'ar' ? 'جاري الاتصال...' : 'Connecting...'}
               </span>
-            </button>
-          </div>
+            )}
+          </button>
         </form>
 
-        {/* Footer Link */}
-        <div className="pt-2 text-center border-t border-slate-800">
-          <button
-            type="button"
-            onClick={onCreateNewGame}
-            className="text-xs font-bold text-slate-400 hover:text-amber-400 flex items-center justify-center gap-1.5 mx-auto cursor-pointer transition-colors"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>
-              {lang === 'ar'
-                ? 'ليس لديك كود؟ إنشاء لعبة جديدة'
-                : "Don't have a code? Create New Game"}
-            </span>
-          </button>
-        </div>
+        {/* Footer Link: ليس لديك كود؟ إنشاء لعبة جديدة */}
+        <button
+          type="button"
+          onClick={() => {
+            sound.playTurnChime();
+            onCreateNewGame();
+          }}
+          title={lang === 'ar' ? 'إنشاء لعبة جديدة' : 'Create New Game'}
+          aria-label={lang === 'ar' ? 'إنشاء لعبة جديدة' : 'Create New Game'}
+          className="absolute z-10 cursor-pointer rounded-xl transition-all duration-150 active:scale-95 hover:bg-amber-400/10 outline-none"
+          style={{ top: '83.5%', left: '20.0%', width: '60.0%', height: '3.5%' }}
+        />
       </div>
     </div>
   );
 };
+

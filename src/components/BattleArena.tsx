@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Player, PlayerChoice, QuestionRecord, CategoryDefinition, AnswerType, PendingQuestionData } from '../types/game';
 import { sound } from '../utils/audio';
 import { isCorrectGuess } from '../utils/normalize';
+import { liveVoiceManager } from '../utils/webrtcAudio';
 import {
   Send,
   Lightbulb,
@@ -17,6 +18,8 @@ import {
   ThumbsDown,
   Smartphone,
   BookOpen,
+  Mic,
+  MicOff,
 } from 'lucide-react';
 
 interface BattleArenaProps {
@@ -28,14 +31,26 @@ interface BattleArenaProps {
   roundNumber: number;
   activePlayerId: string;
   questions: QuestionRecord[];
-  onAddQuestionAndAnswer: (question: string, answer: AnswerType, note?: string) => void;
+  onAddQuestionAndAnswer: (
+    question: string,
+    answer: AnswerType,
+    note?: string,
+    isVoice?: boolean,
+    audioData?: string,
+    isVoiceAnswer?: boolean
+  ) => void;
   onCorrectGuess: (winnerId: string, guess: string) => void;
   onWrongGuess: (guesserId: string, guess: string) => void;
   isBotMatch: boolean;
   isOnlineMatch?: boolean;
   onlineRole?: 'host' | 'guest';
-  onOnlineAsk?: (question: string) => void;
-  onOnlineAnswer?: (answer: AnswerType, question: string, note?: string) => void;
+  onOnlineAsk?: (question: string, isVoice?: boolean, audioData?: string) => void;
+  onOnlineAnswer?: (
+    answer: AnswerType,
+    question: string,
+    note?: string,
+    isVoiceAnswer?: boolean
+  ) => void;
   onOnlineGuess?: (guess: string) => void;
   onOnlineResolveGuess?: (isCorrect: boolean) => void;
   pendingQuestionRemote?: PendingQuestionData | null;
@@ -77,10 +92,11 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
   const [questionInput, setQuestionInput] = useState<string>('');
 
   // Local pending question for offline / pass-and-play / bot:
-  // { id, question, askedById, answeredById }
   const [pendingQuestionLocal, setPendingQuestionLocal] = useState<{
     id: string;
     question: string;
+    isVoice?: boolean;
+    audioData?: string;
     askedById: string;
     answeredById: string;
   } | null>(null);
@@ -117,6 +133,14 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
     ? pendingQuestionRemote?.question || null
     : pendingQuestionLocal?.question || null;
 
+  const isVoiceActiveQuestion = isOnlineMatch
+    ? Boolean(pendingQuestionRemote?.isVoice)
+    : Boolean(pendingQuestionLocal?.isVoice);
+
+  const activeQuestionAudioData = isOnlineMatch
+    ? pendingQuestionRemote?.audioData || null
+    : pendingQuestionLocal?.audioData || null;
+
   const isAskerOfPendingQuestion = isOnlineMatch
     ? pendingQuestionRemote?.askedByRole === onlineRole
     : pendingQuestionLocal?.askedById === viewerId;
@@ -127,6 +151,34 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
 
   const activePlayer = activePlayerId === player1.id ? player1 : player2;
   const opponentPlayer = activePlayerId === player1.id ? player2 : player1;
+
+  // Question Ask Mode: 'VOICE' or 'TEXT' (User is free to choose either!)
+  const [askMode, setAskMode] = useState<'VOICE' | 'TEXT'>('VOICE');
+  // Question Answer Mode: 'VOICE' or 'BUTTONS' (Opponent can also choose either!)
+  const [answerMode, setAnswerMode] = useState<'VOICE' | 'BUTTONS'>('VOICE');
+  const [isLiveMicOn, setIsLiveMicOn] = useState<boolean>(false);
+  const [liveMicError, setLiveMicError] = useState<string | null>(null);
+
+  // Toggle Live Mic on/off
+  const handleToggleLiveMic = async () => {
+    sound.playCardFlip();
+    if (!isLiveMicOn) {
+      try {
+        const ok = await liveVoiceManager.start(onlineRole === 'host');
+        if (ok) {
+          setIsLiveMicOn(true);
+          setLiveMicError(null);
+        } else {
+          setLiveMicError(lang === 'ar' ? 'تعذر تشغيل المايك، يرجى منح الإذن' : 'Could not access microphone');
+        }
+      } catch {
+        setLiveMicError(lang === 'ar' ? 'تعذر تشغيل المايك' : 'Mic error');
+      }
+    } else {
+      liveVoiceManager.stop();
+      setIsLiveMicOn(false);
+    }
+  };
 
   // Is it my turn to ask right now? (Only when no question is pending!)
   const isMyTurnToAsk = isOnlineMatch
@@ -167,13 +219,53 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
     }
   }, [isBotMatch, activePlayerId, pendingQuestionLocal, category, lang, player1.id, player2.id]);
 
+  // Ask Question via Live Voice (Speaks directly over mic)
+  const handleAskVoice = () => {
+    if (!isMyTurnToAsk) return;
+    sound.playTurnChime();
+
+    if (isOnlineMatch && onOnlineAsk) {
+      onOnlineAsk('🎙️ سؤال صوتي لايف', true);
+      return;
+    }
+
+    const respondentId = activePlayerId === player1.id ? player2.id : player1.id;
+    setPendingQuestionLocal({
+      id: 'q-' + Date.now(),
+      question: '🎙️ سؤال صوتي لايف',
+      isVoice: true,
+      askedById: activePlayerId,
+      answeredById: respondentId,
+    });
+    setSelectedAnswer(null);
+    setAnswerNote('');
+
+    // In Pass & Play: prompt phone handoff to opponent to answer
+    if (!isOnlineMatch && !isBotMatch) {
+      setPassAndPlayHandoff(true);
+      return;
+    }
+
+    // In Bot Match: Human asked by voice, Bot answers after brief delay
+    if (isBotMatch && activePlayerId === player1.id) {
+      setTimeout(() => {
+        const botAns: AnswerType = Math.random() > 0.4 ? 'YES' : 'NO';
+        if (botAns === 'YES') sound.playYesSound();
+        else sound.playNoSound();
+
+        onAddQuestionAndAnswer('🎙️ سؤال صوتي لايف', botAns, undefined, true);
+        setPendingQuestionLocal(null);
+      }, 900);
+    }
+  };
+
   // Ask Question Handler (Strictly only callable by the active player whose turn it is)
   const handleAsk = (qText: string) => {
     if (!qText.trim() || !isMyTurnToAsk) return;
     sound.playTurnChime();
 
     if (isOnlineMatch && onOnlineAsk) {
-      onOnlineAsk(qText.trim());
+      onOnlineAsk(qText.trim(), false);
       setQuestionInput('');
       return;
     }
@@ -182,6 +274,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
     setPendingQuestionLocal({
       id: 'q-' + Date.now(),
       question: qText.trim(),
+      isVoice: false,
       askedById: activePlayerId,
       answeredById: respondentId,
     });
@@ -221,13 +314,49 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
         if (botAns === 'YES') sound.playYesSound();
         else sound.playNoSound();
 
-        onAddQuestionAndAnswer(qText.trim(), botAns, botNote);
+        onAddQuestionAndAnswer(qText.trim(), botAns, botNote, false);
         setPendingQuestionLocal(null);
       }, 800);
     }
   };
 
-  // Submit Answer to Question
+  // Quick Answer with Live Voice (Opponent speaks verbally via live mic and confirms choice)
+  const handleVoiceQuickAnswer = (ans: AnswerType) => {
+    if (!activeQuestionText) return;
+
+    if (ans === 'YES') sound.playYesSound();
+    else if (ans === 'NO') sound.playNoSound();
+    else sound.playMaybeSound();
+
+    if (isOnlineMatch && onOnlineAnswer) {
+      onOnlineAnswer(ans, activeQuestionText, undefined, true);
+      setSelectedAnswer(null);
+      setAnswerNote('');
+      return;
+    }
+
+    // Offline / Pass & Play / Bot Match:
+    onAddQuestionAndAnswer(
+      activeQuestionText,
+      ans,
+      undefined,
+      isVoiceActiveQuestion,
+      activeQuestionAudioData || undefined,
+      true
+    );
+    setPendingQuestionLocal(null);
+    setSelectedAnswer(null);
+    setAnswerNote('');
+
+    // In Pass & Play: The respondent (who holds phone) now becomes the active player to ask!
+    if (!isOnlineMatch && !isBotMatch) {
+      const nextActiveId = activePlayerId === player1.id ? player2.id : player1.id;
+      setViewerId(nextActiveId);
+      setPassAndPlayHandoff(false);
+    }
+  };
+
+  // Submit Answer to Question (Buttons Mode with optional note)
   const handleSubmitAnswer = () => {
     if (!activeQuestionText || !selectedAnswer) return;
 
@@ -238,14 +367,21 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
     const note = answerNote.trim() || undefined;
 
     if (isOnlineMatch && onOnlineAnswer) {
-      onOnlineAnswer(selectedAnswer, activeQuestionText, note);
+      onOnlineAnswer(selectedAnswer, activeQuestionText, note, false);
       setSelectedAnswer(null);
       setAnswerNote('');
       return;
     }
 
     // Offline / Pass & Play / Bot Match:
-    onAddQuestionAndAnswer(activeQuestionText, selectedAnswer, note);
+    onAddQuestionAndAnswer(
+      activeQuestionText,
+      selectedAnswer,
+      note,
+      isVoiceActiveQuestion,
+      activeQuestionAudioData || undefined,
+      false
+    );
     setPendingQuestionLocal(null);
     setSelectedAnswer(null);
     setAnswerNote('');
@@ -373,6 +509,61 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
         </div>
       </div>
 
+      {/* 1B. LIVE MIC STATUS & TOGGLE BAR */}
+      <div className="flex items-center justify-between px-3.5 py-2.5 bg-[#0F172A] border border-slate-700/80 rounded-2xl shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="relative flex items-center justify-center">
+            {isLiveMicOn && (
+              <span className="absolute w-4 h-4 rounded-full bg-emerald-400 animate-ping opacity-75" />
+            )}
+            <span className={`w-3 h-3 rounded-full ${isLiveMicOn ? 'bg-emerald-500' : 'bg-slate-600'}`} />
+          </div>
+          <div>
+            <div className="text-xs font-black text-slate-100 flex items-center gap-1.5">
+              <span>{isLiveMicOn ? (lang === 'ar' ? 'المايك شغال لايف 🟢' : 'Mic is LIVE 🟢') : (lang === 'ar' ? 'فويس لايف (المايك)' : 'Live Voice')}</span>
+              {isLiveMicOn && (
+                <span className="text-[10px] px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 font-bold rounded-full border border-emerald-500/30">
+                  {lang === 'ar' ? 'مباشر' : 'Live'}
+                </span>
+              )}
+            </div>
+            <div className="text-[10px] text-slate-400 font-medium">
+              {isLiveMicOn
+                ? (lang === 'ar' ? 'صوتك مسموع مباشرة لخصمك!' : 'Your voice is live to your opponent!')
+                : (lang === 'ar' ? 'اضغط لتشغيل المايك والتحدث مباشرة' : 'Tap to turn on mic and talk live')}
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleToggleLiveMic}
+          className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-sm ${
+            isLiveMicOn
+              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
+              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+          }`}
+        >
+          {isLiveMicOn ? (
+            <>
+              <MicOff className="w-4 h-4 text-rose-400" />
+              <span>{lang === 'ar' ? 'كتم المايك' : 'Mute Mic'}</span>
+            </>
+          ) : (
+            <>
+              <Mic className="w-4 h-4 text-emerald-400 animate-pulse" />
+              <span>{lang === 'ar' ? 'تشغيل المايك 🎙️' : 'Turn Mic ON 🎙️'}</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {liveMicError && (
+        <div className="px-3 py-1.5 bg-rose-950/70 border border-rose-600/50 rounded-xl text-[11px] font-bold text-rose-300 text-center animate-shake">
+          {liveMicError}
+        </div>
+      )}
+
       {/* 2. TURN CALLOUT BANNER (Clearly stating whose turn it is to ask about their card) */}
       <div
         className={`rounded-2xl p-2.5 text-center text-xs font-black flex items-center justify-center gap-2 border transition-all ${
@@ -424,8 +615,9 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
               </div>
               {latestMyClue ? (
                 <div className="text-slate-300 font-medium truncate">
-                  💡 "{latestMyClue.question}" ←{' '}
+                  💡 {latestMyClue.isVoice ? '🎙️ ' : ''}"{latestMyClue.question}" ←{' '}
                   <span className="font-bold text-emerald-400">
+                    {latestMyClue.isVoiceAnswer ? '🗣️ ' : ''}
                     {latestMyClue.answer === 'YES' ? 'نعم ✓' : latestMyClue.answer === 'NO' ? 'لا ✕' : latestMyClue.answer === 'SOMETIMES' ? 'أحيانًا ~' : 'مش متأكد ?'}
                   </span>
                 </div>
@@ -485,8 +677,9 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
               </div>
               {latestOpponentClue ? (
                 <div className="text-slate-300 font-medium truncate">
-                  💡 "{latestOpponentClue.question}" ←{' '}
+                  💡 {latestOpponentClue.isVoice ? '🎙️ ' : ''}"{latestOpponentClue.question}" ←{' '}
                   <span className="font-bold text-slate-200">
+                    {latestOpponentClue.isVoiceAnswer ? '🗣️ ' : ''}
                     {latestOpponentClue.answer === 'YES' ? 'نعم ✓' : latestOpponentClue.answer === 'NO' ? 'لا ✕' : latestOpponentClue.answer === 'SOMETIMES' ? 'أحيانًا ~' : 'مش متأكد ?'}
                   </span>
                 </div>
@@ -559,18 +752,33 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
               <>
                 <div className="text-xs font-bold text-slate-300 flex items-center justify-between">
                   <span>
-                    {lang === 'ar'
-                      ? `${activePlayer.name} يسألك:`
-                      : `${activePlayer.name} asks you:`}
+                    {isVoiceActiveQuestion
+                      ? (lang === 'ar' ? `🎙️ ${activePlayer.name} سألك بالمايك:` : `🎙️ ${activePlayer.name} asked by voice:`)
+                      : (lang === 'ar' ? `${activePlayer.name} يسألك:` : `${activePlayer.name} asks you:`)}
                   </span>
                   <span className="text-purple-400 text-[11px] bg-[#1E293B] px-2 py-0.5 rounded-full border border-slate-700 font-bold">
                     {lang === 'ar' ? `أجب يا ${viewerName}` : `${viewerName} answers`}
                   </span>
                 </div>
 
-                <div className="text-base font-black text-white bg-[#1E293B] p-3.5 rounded-xl border border-slate-700 text-center shadow-sm">
-                  «{activeQuestionText}»
-                </div>
+                {/* Voice Question Banner OR Text Question Display */}
+                {isVoiceActiveQuestion ? (
+                  <div className="p-4 bg-gradient-to-r from-purple-950/60 via-indigo-950/60 to-purple-950/60 rounded-2xl border border-purple-500/40 text-center space-y-2 shadow-inner">
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 border border-purple-400 text-white flex items-center justify-center mx-auto shadow-md animate-pulse">
+                      <Mic className="w-6 h-6 text-white" />
+                    </div>
+                    <div className="text-sm font-black text-white">
+                      {lang === 'ar' ? `🎙️ سألك ${activePlayer.name} عبر المايك مباشرة` : `🎙️ ${activePlayer.name} asked with mic directly`}
+                    </div>
+                    <div className="text-xs text-purple-300 font-bold">
+                      {lang === 'ar' ? 'ما إجابتك على سؤاله؟ (اه أو لا)' : 'What is your answer? (Yes or No)'}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-base font-black text-white bg-[#1E293B] p-3.5 rounded-xl border border-slate-700 text-center shadow-sm">
+                    «{activeQuestionText}»
+                  </div>
+                )}
 
                 {/* Reminder of Secret Card chosen for the asker */}
                 <div className="flex items-center justify-center gap-2 p-2 bg-amber-500/10 rounded-xl text-[11px] font-bold text-amber-300 border border-amber-500/20">
@@ -582,85 +790,202 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                   </span>
                 </div>
 
-                {/* 4 High-contrast answer buttons with tactile feedback */}
-                <div className="grid grid-cols-2 gap-2.5 pt-1">
+                {/* MODE TOGGLE FOR ANSWERING: [ 🎙️ إجابة بالمايك (فويس لايف) ] vs [ 🔘 إجابة بالأزرار ] */}
+                <div className="flex bg-[#0A1020] p-1 rounded-2xl border border-slate-700/80 shadow-inner">
                   <button
                     type="button"
-                    onClick={() => setSelectedAnswer('YES')}
-                    className={`h-12 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                      selectedAnswer === 'YES'
-                        ? 'btn-ans-yes ring-2 ring-emerald-300 scale-102'
-                        : 'btn-ans-yes opacity-90 hover:opacity-100'
+                    onClick={() => {
+                      sound.playCardFlip();
+                      setAnswerMode('VOICE');
+                    }}
+                    className={`flex-1 py-2.5 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      answerMode === 'VOICE'
+                        ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-white'
                     }`}
                   >
-                    <Check className="w-4 h-4 stroke-[3] text-white" />
-                    <span>{lang === 'ar' ? 'نعم 🟢' : 'YES 🟢'}</span>
+                    <Mic className="w-4 h-4 text-emerald-200" />
+                    <span>{lang === 'ar' ? '🎙️ إجابة بالمايك (فويس)' : '🎙️ Voice Answer'}</span>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => setSelectedAnswer('NO')}
-                    className={`h-12 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                      selectedAnswer === 'NO'
-                        ? 'btn-ans-no ring-2 ring-rose-300 scale-102'
-                        : 'btn-ans-no opacity-90 hover:opacity-100'
+                    onClick={() => {
+                      sound.playCardFlip();
+                      setAnswerMode('BUTTONS');
+                    }}
+                    className={`flex-1 py-2.5 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      answerMode === 'BUTTONS'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-white'
                     }`}
                   >
-                    <X className="w-4 h-4 stroke-[3] text-white" />
-                    <span>{lang === 'ar' ? 'لا 🔴' : 'NO 🔴'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedAnswer('SOMETIMES')}
-                    className={`h-12 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                      selectedAnswer === 'SOMETIMES'
-                        ? 'btn-ans-sometimes ring-2 ring-amber-300 scale-102'
-                        : 'btn-ans-sometimes opacity-90 hover:opacity-100'
-                    }`}
-                  >
-                    <AlertCircle className="w-4 h-4 text-slate-900" />
-                    <span>{lang === 'ar' ? 'أحيانًا 🟡' : 'SOMETIMES 🟡'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedAnswer('NOT_SURE')}
-                    className={`h-12 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                      selectedAnswer === 'NOT_SURE'
-                        ? 'btn-ans-not-sure ring-2 ring-slate-300 scale-102'
-                        : 'btn-ans-not-sure'
-                    }`}
-                  >
-                    <HelpCircle className="w-4 h-4 text-slate-400" />
-                    <span>{lang === 'ar' ? 'مش متأكد ⚪' : 'NOT SURE ⚪'}</span>
+                    <Check className="w-4 h-4 text-blue-200" />
+                    <span>{lang === 'ar' ? '🔘 إجابة بالأزرار' : '🔘 Buttons Answer'}</span>
                   </button>
                 </div>
 
-                {/* Optional Note Input */}
-                <div className="space-y-1 pt-1">
-                  <label className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
-                    <span>📝</span>
-                    <span>{lang === 'ar' ? 'إضافة ملاحظة — اختياري' : 'Add a note — optional'}</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={answerNote}
-                    onChange={(e) => setAnswerNote(e.target.value)}
-                    placeholder={lang === 'ar' ? 'مثلاً: "بس مش دايماً سخنة"...' : 'e.g. "Only when fresh"...'}
-                    className="w-full bg-[#1E293B] border border-slate-700 focus:border-purple-500 rounded-xl px-3 py-2 text-xs font-bold text-white placeholder-slate-500 focus:outline-none"
-                  />
-                </div>
+                {answerMode === 'VOICE' ? (
+                  /* --- MODE 1: LIVE VOICE ANSWER (إجابة فويس لايف عبر المايك) --- */
+                  <div className="bg-[#111C35] border border-emerald-500/30 rounded-2xl p-4 text-center space-y-3 shadow-lg animate-fade-in">
+                    <div className="flex items-center justify-center gap-2">
+                      <div className={`w-3.5 h-3.5 rounded-full ${isLiveMicOn ? 'bg-emerald-400 animate-ping' : 'bg-emerald-400'}`} />
+                      <span className="text-xs font-black text-emerald-200">
+                        {isLiveMicOn
+                          ? (lang === 'ar' ? 'المايك شغال لايف — تكلم وجاوب مباشرة!' : 'Mic is LIVE — Say your answer directly!')
+                          : (lang === 'ar' ? 'المايك مقفل — يمكنك تشغيله والتحدث مباشرة' : 'Mic is OFF — Turn on to speak directly')}
+                      </span>
+                    </div>
 
-                {/* Submit Answer CTA */}
-                <button
-                  type="button"
-                  disabled={!selectedAnswer}
-                  onClick={handleSubmitAnswer}
-                  className="w-full h-13 btn-premium-purple rounded-2xl font-black text-sm shadow-md transition-all cursor-pointer active:scale-98 flex items-center justify-center gap-2 disabled:opacity-40"
-                >
-                  <span>{lang === 'ar' ? `إرسال الإجابة لـ ${activePlayer.name} ←` : `Send Answer to ${activePlayer.name} →`}</span>
-                </button>
+                    {!isLiveMicOn && (
+                      <button
+                        type="button"
+                        onClick={handleToggleLiveMic}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 mx-auto transition-all shadow-md active:scale-95 cursor-pointer"
+                      >
+                        <Mic className="w-4 h-4 text-white animate-pulse" />
+                        <span>{lang === 'ar' ? 'تشغيل المايك للإجابة 🎙️' : 'Turn On Mic to Answer 🎙️'}</span>
+                      </button>
+                    )}
+
+                    <p className="text-xs text-slate-300 font-medium">
+                      {lang === 'ar'
+                        ? 'تكلم مباشرة في المايك وقل إجابتك لخصمك (اه أو لا)، ثم اضغط الزر لتأكيد وتثبيت إجابتك!'
+                        : 'Speak directly into your mic, then tap the button to confirm your answer!'}
+                    </p>
+
+                    {/* Primary Voice Quick-Answer Buttons */}
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleVoiceQuickAnswer('YES')}
+                        className="h-14 btn-ans-yes rounded-2xl text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-lg cursor-pointer active:scale-95 transition-all"
+                      >
+                        <Mic className="w-5 h-5 text-white" />
+                        <span>{lang === 'ar' ? 'جاوبت: اه (نعم) 🟢' : 'Said: YES 🟢'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleVoiceQuickAnswer('NO')}
+                        className="h-14 btn-ans-no rounded-2xl text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-lg cursor-pointer active:scale-95 transition-all"
+                      >
+                        <Mic className="w-5 h-5 text-white" />
+                        <span>{lang === 'ar' ? 'جاوبت: لا 🔴' : 'Said: NO 🔴'}</span>
+                      </button>
+                    </div>
+
+                    {/* Secondary Voice Options */}
+                    <div className="grid grid-cols-2 gap-2 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => handleVoiceQuickAnswer('SOMETIMES')}
+                        className="h-11 btn-ans-sometimes rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                      >
+                        <AlertCircle className="w-4 h-4 text-slate-900" />
+                        <span>{lang === 'ar' ? 'جاوبت: أحيانًا 🟡' : 'Said: Sometimes 🟡'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleVoiceQuickAnswer('NOT_SURE')}
+                        className="h-11 btn-ans-not-sure rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                      >
+                        <HelpCircle className="w-4 h-4 text-slate-400" />
+                        <span>{lang === 'ar' ? 'جاوبت: مش متأكد ⚪' : 'Said: Not Sure ⚪'}</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* --- MODE 2: CLASSIC BUTTONS MODE --- */
+                  <div className="space-y-3 animate-fade-in">
+                    {/* 4 High-contrast answer buttons with tactile feedback */}
+                    <div className="grid grid-cols-2 gap-2.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedAnswer('YES');
+                          sound.playYesSound();
+                        }}
+                        className={`h-13 sm:h-14 rounded-2xl text-sm sm:text-base font-black transition-all cursor-pointer flex items-center justify-center gap-2 shadow-md ${
+                          selectedAnswer === 'YES'
+                            ? 'btn-ans-yes ring-4 ring-emerald-300 scale-102'
+                            : 'btn-ans-yes opacity-90 hover:opacity-100'
+                        }`}
+                      >
+                        <Check className="w-5 h-5 stroke-[3] text-white" />
+                        <span>{lang === 'ar' ? 'نعم (اه) 🟢' : 'YES 🟢'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedAnswer('NO');
+                          sound.playNoSound();
+                        }}
+                        className={`h-13 sm:h-14 rounded-2xl text-sm sm:text-base font-black transition-all cursor-pointer flex items-center justify-center gap-2 shadow-md ${
+                          selectedAnswer === 'NO'
+                            ? 'btn-ans-no ring-4 ring-rose-300 scale-102'
+                            : 'btn-ans-no opacity-90 hover:opacity-100'
+                        }`}
+                      >
+                        <X className="w-5 h-5 stroke-[3] text-white" />
+                        <span>{lang === 'ar' ? 'لا 🔴' : 'NO 🔴'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAnswer('SOMETIMES')}
+                        className={`h-11 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                          selectedAnswer === 'SOMETIMES'
+                            ? 'btn-ans-sometimes ring-2 ring-amber-300 scale-102'
+                            : 'btn-ans-sometimes opacity-90 hover:opacity-100'
+                        }`}
+                      >
+                        <AlertCircle className="w-4 h-4 text-slate-900" />
+                        <span>{lang === 'ar' ? 'أحيانًا 🟡' : 'SOMETIMES 🟡'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAnswer('NOT_SURE')}
+                        className={`h-11 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                          selectedAnswer === 'NOT_SURE'
+                            ? 'btn-ans-not-sure ring-2 ring-slate-300 scale-102'
+                            : 'btn-ans-not-sure'
+                        }`}
+                      >
+                        <HelpCircle className="w-4 h-4 text-slate-400" />
+                        <span>{lang === 'ar' ? 'مش متأكد ⚪' : 'NOT SURE ⚪'}</span>
+                      </button>
+                    </div>
+
+                    {/* Optional Note Input */}
+                    <div className="space-y-1 pt-1">
+                      <label className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
+                        <span>📝</span>
+                        <span>{lang === 'ar' ? 'إضافة ملاحظة — اختياري' : 'Add a note — optional'}</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={answerNote}
+                        onChange={(e) => setAnswerNote(e.target.value)}
+                        placeholder={lang === 'ar' ? 'مثلاً: "بس مش دايماً سخنة"...' : 'e.g. "Only when fresh"...'}
+                        className="w-full bg-[#1E293B] border border-slate-700 focus:border-purple-500 rounded-xl px-3 py-2 text-xs font-bold text-white placeholder-slate-500 focus:outline-none"
+                      />
+                    </div>
+
+                    {/* Submit Answer CTA */}
+                    <button
+                      type="button"
+                      disabled={!selectedAnswer}
+                      onClick={handleSubmitAnswer}
+                      className="w-full h-13 btn-premium-purple rounded-2xl font-black text-sm shadow-md transition-all cursor-pointer active:scale-98 flex items-center justify-center gap-2 disabled:opacity-40"
+                    >
+                      <span>{lang === 'ar' ? `إرسال الإجابة لـ ${activePlayer.name} ←` : `Send Answer to ${activePlayer.name} →`}</span>
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -685,36 +1010,101 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                   <span>{lang === 'ar' ? 'أنا عرفت صورتي! 🎯' : 'I Know My Picture! 🎯'}</span>
                 </button>
 
-                {/* QUESTION INPUT + SEND BUTTON (ONLY VISIBLE & INTERACTIVE FOR ACTIVE PLAYER) */}
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    handleAsk(questionInput);
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <input
-                    type="text"
-                    autoFocus
-                    value={questionInput}
-                    onChange={(e) => setQuestionInput(e.target.value)}
-                    placeholder={lang === 'ar' ? 'اكتب سؤالك عن صورتك المخفية...' : 'Ask about your hidden card...'}
-                    className="flex-1 h-12 bg-[#0F172A] border border-slate-700 focus:border-blue-500 rounded-xl px-4 text-sm text-white font-bold placeholder-slate-500 focus:outline-none shadow-inner"
-                  />
+                {/* MODE TOGGLE: [ 🎙️ سؤال صوتي (فويس) ] vs [ ✍️ سؤال مكتوب ] */}
+                <div className="flex bg-[#0A1020] p-1 rounded-2xl border border-slate-700/80 shadow-inner">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.playCardFlip();
+                      setAskMode('VOICE');
+                    }}
+                    className={`flex-1 py-2.5 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      askMode === 'VOICE'
+                        ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Mic className="w-4 h-4 text-purple-200" />
+                    <span>{lang === 'ar' ? '🎙️ سؤال صوتي (فويس)' : '🎙️ Voice Question'}</span>
+                  </button>
 
                   <button
-                    type="submit"
-                    disabled={!questionInput.trim()}
-                    className="h-12 px-5 btn-premium-blue disabled:opacity-40 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
+                    type="button"
+                    onClick={() => {
+                      sound.playCardFlip();
+                      setAskMode('TEXT');
+                    }}
+                    className={`flex-1 py-2.5 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      askMode === 'TEXT'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
                   >
-                    <span>{lang === 'ar' ? 'إرسال' : 'Send'}</span>
-                    <Send className="w-4 h-4 rtl:rotate-180" />
+                    <Send className="w-4 h-4 text-blue-200" />
+                    <span>{lang === 'ar' ? '✍️ سؤال مكتوب' : '✍️ Text Question'}</span>
                   </button>
-                </form>
+                </div>
+
+                {/* --- MODE 1: LIVE VOICE QUESTION (فويس لايف مباشر) --- */}
+                {askMode === 'VOICE' ? (
+                  <div className="bg-[#111C35] border border-purple-500/30 rounded-2xl p-4 text-center space-y-3 shadow-lg animate-fade-in">
+                    <div className="flex items-center justify-center gap-2">
+                      <div className={`w-3.5 h-3.5 rounded-full ${isLiveMicOn ? 'bg-emerald-400 animate-ping' : 'bg-purple-400'}`} />
+                      <span className="text-xs font-black text-purple-200">
+                        {isLiveMicOn
+                          ? (lang === 'ar' ? 'المايك شغال لايف — تكلم مباشرة!' : 'Mic is LIVE — Speak directly!')
+                          : (lang === 'ar' ? 'افتح المايك بالأعلى وتكلم مباشرة' : 'Turn on mic and ask directly')}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-purple-300 font-medium">
+                      {lang === 'ar'
+                        ? 'تكلم مباشرة في المايك واطرح سؤالك عن صورتك، ثم اضغط الزر ليظهر لخصمك خيار اه أو لا فوراً!'
+                        : 'Speak directly into your mic, then tap the button so your opponent can answer Yes or No!'}
+                    </p>
+
+                    {/* Big Action Button: "طرحت سؤالي بالمايك (أجب يا خصمي) 📢" */}
+                    <button
+                      type="button"
+                      onClick={handleAskVoice}
+                      className="w-full h-14 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:brightness-110 text-white font-black text-sm sm:text-base rounded-2xl flex items-center justify-center gap-2.5 shadow-lg border-t border-purple-400/40 cursor-pointer active:scale-98 transition-all"
+                    >
+                      <Mic className="w-5 h-5 text-purple-200 animate-pulse" />
+                      <span>{lang === 'ar' ? '📢 طرحت سؤالي بالمايك (أجب يا خصمي)' : '📢 Asked via Live Mic (Answer)'}</span>
+                    </button>
+                  </div>
+                ) : (
+                  /* --- MODE 2: TEXT QUESTION --- */
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleAsk(questionInput);
+                    }}
+                    className="flex items-center gap-2 animate-fade-in"
+                  >
+                    <input
+                      type="text"
+                      autoFocus
+                      value={questionInput}
+                      onChange={(e) => setQuestionInput(e.target.value)}
+                      placeholder={lang === 'ar' ? 'اكتب سؤالك عن صورتك المخفية...' : 'Ask about your hidden card...'}
+                      className="flex-1 h-12 bg-[#0F172A] border border-slate-700 focus:border-blue-500 rounded-xl px-4 text-sm text-white font-bold placeholder-slate-500 focus:outline-none shadow-inner"
+                    />
+
+                    <button
+                      type="submit"
+                      disabled={!questionInput.trim()}
+                      className="h-12 px-5 btn-premium-blue disabled:opacity-40 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
+                    >
+                      <span>{lang === 'ar' ? 'إرسال' : 'Send'}</span>
+                      <Send className="w-4 h-4 rtl:rotate-180" />
+                    </button>
+                  </form>
+                )}
               </div>
 
-              {/* Quick Question Suggestions Pills */}
-              {category.suggestedQuestionsAr.length > 0 && (
+              {/* Quick Question Suggestions Pills (Available in text mode) */}
+              {askMode === 'TEXT' && category.suggestedQuestionsAr.length > 0 && (
                 <div className="pt-1">
                   <div className="text-[11px] font-bold text-slate-400 mb-1.5 flex items-center gap-1">
                     <Sparkles className="w-3 h-3 text-amber-400" />
@@ -736,19 +1126,19 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
               )}
             </div>
           ) : (
-            /* 1B: WAITING OPPONENT (NO INPUT, NO KEYBOARD, NO SEND BUTTON - SHOWS WRITING STATE) */
+            /* 1B: WAITING OPPONENT (NO INPUT, NO KEYBOARD, NO SEND BUTTON - SHOWS WRITING/ASKING STATE) */
             <div className="p-6 bg-[#0F172A] border border-slate-700/80 rounded-2xl text-center space-y-3">
               <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-blue-500/10 text-2xl animate-bounce">
-                ✍️
+                🎙️
               </div>
               <div className="space-y-1">
                 <h4 className="text-base font-black text-white">
-                  {lang === 'ar' ? `${activePlayer.name} يكتب سؤاله... ✍️` : `${activePlayer.name} is writing a question... ✍️`}
+                  {lang === 'ar' ? `${activePlayer.name} يطرح سؤاله (صوتياً أو كتابياً)...` : `${activePlayer.name} is asking a question...`}
                 </h4>
                 <p className="text-xs text-slate-400 font-medium max-w-xs mx-auto">
                   {lang === 'ar'
-                    ? `بمجرد أن يرسل سؤاله، سيظهر لك فوراً هنا لتجيب عنه بنعم أو لا.`
-                    : `Once sent, the question will appear here for you to answer.`}
+                    ? `بمجرد أن يطرح سؤاله، سيظهر لك فوراً هنا لتجيب عنه بـ اه أو لا.`
+                    : `Once sent, the question will appear here for you to answer Yes or No.`}
                 </p>
               </div>
             </div>
@@ -886,14 +1276,29 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                             ? (lang === 'ar' ? 'عن صورتك 🔒' : 'Your Card')
                             : (lang === 'ar' ? `عن صورة ${opponentName} 👤` : `${opponentName}'s Card`)}
                         </span>
-                        <span className="text-white font-bold truncate">
-                          "{rec.question}"
-                        </span>
+                        {rec.isVoice ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-purple-300 font-bold flex items-center gap-1">
+                              <Mic className="w-3.5 h-3.5 text-purple-400" />
+                              <span>{lang === 'ar' ? 'سؤال بالمايك لايف' : 'Live Mic Question'}</span>
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-white font-bold truncate">
+                            "{rec.question}"
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex items-center justify-between pt-0.5 ps-2 text-[11px]">
-                        <span className="text-slate-400 font-medium">
-                          {lang === 'ar' ? `إجابة ${respondentName}:` : `Answer by ${respondentName}:`}
+                        <span className="text-slate-400 font-medium flex items-center gap-1.5">
+                          <span>{lang === 'ar' ? `إجابة ${respondentName}:` : `Answer by ${respondentName}:`}</span>
+                          {rec.isVoiceAnswer && (
+                            <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/15 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+                              <Mic className="w-2.5 h-2.5" />
+                              <span>{lang === 'ar' ? 'بالمايك' : 'via Mic'}</span>
+                            </span>
+                          )}
                         </span>
                         {rec.answer === 'YES' && (
                           <span className="text-emerald-400 bg-emerald-500/15 px-2.5 py-0.5 rounded-full font-bold">

@@ -280,6 +280,9 @@ interface OnlineRoom {
   questions: Array<{
     id: string;
     question: string;
+    isVoice?: boolean;
+    isVoiceAnswer?: boolean;
+    audioData?: string;
     askedByRole: 'host' | 'guest';
     answeredByRole: 'host' | 'guest';
     answer: 'YES' | 'NO' | 'SOMETIMES' | 'NOT_SURE';
@@ -294,6 +297,8 @@ interface OnlineRoom {
   pendingQuestion?: {
     id: string;
     question: string;
+    isVoice?: boolean;
+    audioData?: string;
     askedByRole: 'host' | 'guest';
     answeredByRole: 'host' | 'guest';
   };
@@ -483,7 +488,7 @@ wss.on('connection', (ws) => {
         }
       }
 
-      // 5. Ask Question
+      // 5. Ask Question (Voice or Text)
       else if (msg.type === 'ASK_QUESTION') {
         if (!userRoomCode || !userRole) return;
         const room = rooms.get(userRoomCode);
@@ -491,7 +496,9 @@ wss.on('connection', (ws) => {
 
         room.pendingQuestion = {
           id: 'q-' + Date.now(),
-          question: msg.question,
+          question: msg.question || (msg.isVoice ? '🎙️ سؤال صوتي' : 'سؤال'),
+          isVoice: Boolean(msg.isVoice),
+          audioData: msg.audioData,
           askedByRole: userRole,
           answeredByRole: userRole === 'host' ? ('guest' as const) : ('host' as const),
         };
@@ -507,7 +514,10 @@ wss.on('connection', (ws) => {
 
         const record = {
           id: msg.questionId || 'q-' + Date.now(),
-          question: msg.question,
+          question: msg.question || (room.pendingQuestion?.isVoice ? '🎙️ سؤال صوتي' : 'سؤال'),
+          isVoice: Boolean(msg.isVoice || room.pendingQuestion?.isVoice),
+          isVoiceAnswer: Boolean(msg.isVoiceAnswer),
+          audioData: msg.audioData || room.pendingQuestion?.audioData,
           askedByRole: userRole === 'host' ? ('guest' as const) : ('host' as const),
           answeredByRole: userRole,
           answer: msg.answer,
@@ -520,6 +530,21 @@ wss.on('connection', (ws) => {
         // Switch turn to respondent to ask their own question!
         room.activePlayerRole = userRole;
         broadcastRoomState(room);
+      }
+
+      // 6B. Real-time Live Voice WebRTC signaling
+      else if (msg.type === 'VOICE_SIGNAL') {
+        if (!userRoomCode || !userRole) return;
+        const room = rooms.get(userRoomCode);
+        if (!room) return;
+        const targetWs = userRole === 'host' ? room.guest?.ws : room.host.ws;
+        if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+          targetWs.send(JSON.stringify({
+            type: 'VOICE_SIGNAL',
+            fromRole: userRole,
+            signal: msg.signal,
+          }));
+        }
       }
 
       // 7. Make a Guess (Sent to opponent for manual confirmation)

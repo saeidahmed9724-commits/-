@@ -10,6 +10,8 @@ export interface OnlineRoomData {
   questions: Array<{
     id: string;
     question: string;
+    isVoice?: boolean;
+    audioData?: string;
     askedByRole: 'host' | 'guest';
     answeredByRole: 'host' | 'guest';
     answer: AnswerType;
@@ -24,6 +26,8 @@ export interface OnlineRoomData {
   pendingQuestion?: {
     id: string;
     question: string;
+    isVoice?: boolean;
+    audioData?: string;
     askedByRole: 'host' | 'guest';
     answeredByRole: 'host' | 'guest';
   };
@@ -143,20 +147,36 @@ class OnlineGameService {
     });
   }
 
-  askQuestion(question: string) {
+  askQuestion(question: string, isVoice?: boolean, audioData?: string) {
     this.send({
       type: 'ASK_QUESTION',
       question,
+      isVoice: Boolean(isVoice),
+      audioData,
     });
   }
 
-  answerQuestion(question: string, answer: AnswerType, note?: string, questionId?: string) {
+  sendVoiceSignal(signal: any) {
+    this.send({
+      type: 'VOICE_SIGNAL',
+      signal,
+    });
+  }
+
+  answerQuestion(
+    question: string,
+    answer: AnswerType,
+    note?: string,
+    questionId?: string,
+    isVoiceAnswer?: boolean
+  ) {
     this.send({
       type: 'ANSWER_QUESTION',
       question,
       answer,
       note,
       questionId,
+      isVoiceAnswer: Boolean(isVoiceAnswer),
     });
   }
 
