@@ -7,7 +7,8 @@ export type SelectedGameSetupMode = 'ONLINE_2' | 'ONLINE_3' | 'ONLINE_4' | 'PASS
 interface PlayerCountModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelectMode: (mode: SelectedGameSetupMode) => void;
+  onSelectMode?: (mode: SelectedGameSetupMode) => void;
+  onSelectCount?: (count: 2 | 3 | 4) => void;
   lang: 'ar' | 'en';
 }
 
@@ -15,9 +16,16 @@ export const PlayerCountModal: React.FC<PlayerCountModalProps> = ({
   isOpen,
   onClose,
   onSelectMode,
+  onSelectCount,
   lang,
 }) => {
   if (!isOpen) return null;
+
+  const handlePick = (mode: SelectedGameSetupMode, count: 2 | 3 | 4) => {
+    sound.playTurnChime();
+    if (onSelectMode) onSelectMode(mode);
+    if (onSelectCount) onSelectCount(count);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 animate-fade-in select-none">
@@ -61,10 +69,7 @@ export const PlayerCountModal: React.FC<PlayerCountModalProps> = ({
           {/* MODE 1: 2 Players Online */}
           <button
             type="button"
-            onClick={() => {
-              sound.playTurnChime();
-              onSelectMode('ONLINE_2');
-            }}
+            onClick={() => handlePick('ONLINE_2', 2)}
             className="w-full p-3 rounded-2xl bg-gradient-to-r from-blue-950/40 via-[#1E293B] to-[#0F172A] border-2 border-blue-500/40 hover:border-blue-400 text-start flex items-center justify-between transition-all cursor-pointer active:scale-98 group shadow-md"
           >
             <div className="flex items-center gap-2.5">
@@ -92,10 +97,7 @@ export const PlayerCountModal: React.FC<PlayerCountModalProps> = ({
           {/* MODE 2: 3 Players Online */}
           <button
             type="button"
-            onClick={() => {
-              sound.playTurnChime();
-              onSelectMode('ONLINE_3');
-            }}
+            onClick={() => handlePick('ONLINE_3', 3)}
             className="w-full p-3 rounded-2xl bg-gradient-to-r from-purple-950/40 via-[#1E293B] to-[#0F172A] border-2 border-purple-500/40 hover:border-purple-400 text-start flex items-center justify-between transition-all cursor-pointer active:scale-98 group shadow-md"
           >
             <div className="flex items-center gap-2.5">
@@ -123,10 +125,7 @@ export const PlayerCountModal: React.FC<PlayerCountModalProps> = ({
           {/* MODE 3: 4 Players Online */}
           <button
             type="button"
-            onClick={() => {
-              sound.playTurnChime();
-              onSelectMode('ONLINE_4');
-            }}
+            onClick={() => handlePick('ONLINE_4', 4)}
             className="w-full p-3 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-[#1E293B] to-[#0F172A] border-2 border-emerald-500/40 hover:border-emerald-400 text-start flex items-center justify-between transition-all cursor-pointer active:scale-98 group shadow-md"
           >
             <div className="flex items-center gap-2.5">
@@ -164,10 +163,7 @@ export const PlayerCountModal: React.FC<PlayerCountModalProps> = ({
           {/* MODE 4: 2 Players — Same Device */}
           <button
             type="button"
-            onClick={() => {
-              sound.playTurnChime();
-              onSelectMode('PASS_AND_PLAY_2');
-            }}
+            onClick={() => handlePick('PASS_AND_PLAY_2', 2)}
             className="w-full p-3 rounded-2xl bg-gradient-to-r from-amber-950/30 via-[#1E293B] to-[#0F172A] border-2 border-amber-500/40 hover:border-amber-400 text-start flex items-center justify-between transition-all cursor-pointer active:scale-98 group shadow-md"
           >
             <div className="flex items-center gap-2.5">

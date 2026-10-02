@@ -35,7 +35,7 @@ import { BattleArena } from './components/BattleArena';
 import { RevealScreen } from './components/RevealScreen';
 import { GameOverScreen } from './components/GameOverScreen';
 import { RulesModal } from './components/RulesModal';
-import { PlayerCountModal } from './components/PlayerCountModal';
+import { PlayerCountModal, SelectedGameSetupMode } from './components/PlayerCountModal';
 import { MultiplayerSetupScreen } from './components/MultiplayerSetupScreen';
 import { MultiplayerChoosePictureScreen } from './components/MultiplayerChoosePictureScreen';
 import { MultiplayerArena } from './components/MultiplayerArena';
@@ -132,12 +132,14 @@ export default function App() {
         setRoundNumber(room.roundNumber);
 
         // Update player names & scores
-        setPlayer1({
-          id: 'p1',
-          name: room.host.name,
-          score: room.host.score,
-          avatarColor: 'from-emerald-500 to-emerald-700',
-        });
+        if (room.host) {
+          setPlayer1({
+            id: 'p1',
+            name: room.host.name,
+            score: room.host.score,
+            avatarColor: 'from-emerald-500 to-emerald-700',
+          });
+        }
 
         if (room.guest) {
           setPlayer2({
@@ -185,11 +187,11 @@ export default function App() {
 
         // Handle cards for online perspective
         const role = onlineService.userRole;
-        if (role === 'host') {
+        if (role === 'host' && room.host) {
           // Host held card is secret unless reveal
           setP1Card({
-            imageUrl: room.mySecretCard.imageUrl || '',
-            title: room.mySecretCard.title || '',
+            imageUrl: room.mySecretCard?.imageUrl || '',
+            title: room.mySecretCard?.title || '',
             category: room.category.id,
             chosenByPlayerId: room.guest?.name || 'Guest',
             heldByPlayerId: room.host.name,
@@ -204,11 +206,11 @@ export default function App() {
               heldByPlayerId: room.guest?.name || 'Guest',
             });
           }
-        } else if (role === 'guest') {
+        } else if (role === 'guest' && room.host) {
           // Guest held card is secret unless reveal
           setP2Card({
-            imageUrl: room.mySecretCard.imageUrl || '',
-            title: room.mySecretCard.title || '',
+            imageUrl: room.mySecretCard?.imageUrl || '',
+            title: room.mySecretCard?.title || '',
             category: room.category.id,
             chosenByPlayerId: room.host.name,
             heldByPlayerId: room.guest?.name || 'Guest',
@@ -274,6 +276,28 @@ export default function App() {
   const handleOpenPlayerCountModal = (action: 'OFFLINE' | 'ONLINE') => {
     setPendingPlayerCountAction(action);
     setIsPlayerCountModalOpen(true);
+  };
+
+  const handleSelectGameMode = (mode: SelectedGameSetupMode) => {
+    setIsPlayerCountModalOpen(false);
+
+    if (mode === 'ONLINE_2') {
+      // 🎮 2 Players Online
+      handlePlayOnline();
+    } else if (mode === 'ONLINE_3') {
+      // 👥 3 Players Online
+      setPlayerCount(3);
+      setGameMode('ROOM_CODE');
+      setGamePhase('MULTIPLAYER_SETUP');
+    } else if (mode === 'ONLINE_4') {
+      // 👥 4 Players Online
+      setPlayerCount(4);
+      setGameMode('ROOM_CODE');
+      setGamePhase('MULTIPLAYER_SETUP');
+    } else if (mode === 'PASS_AND_PLAY_2') {
+      // 📱 2 Players — Same Device
+      handlePlayOffline();
+    }
   };
 
   const handleSelectPlayerCount = (count: PlayerCount) => {
@@ -799,6 +823,7 @@ export default function App() {
       <PlayerCountModal
         isOpen={isPlayerCountModalOpen}
         onClose={() => setIsPlayerCountModalOpen(false)}
+        onSelectMode={handleSelectGameMode}
         onSelectCount={handleSelectPlayerCount}
         lang={lang}
       />
