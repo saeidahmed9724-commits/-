@@ -273,9 +273,13 @@ export function mpHandle(ws: WebSocket, ctx: MpCtx, msg: any): boolean {
 
     case 'MP_SUBMIT_PICTURE': {
       if (room.phase !== 'CHOOSING' && !(room.phase === 'PLAYING' && !me.secret)) return true;
-      const imageUrl = clean(msg.imageUrl, 2000);
-      const title = clean(msg.title, 80);
-      if (!imageUrl || !title) return true;
+      // A search result is an http(s) link; a phone upload/paste is a (client-shrunk) image data URL.
+      const rawUrl = typeof msg.imageUrl === 'string' ? msg.imageUrl.trim() : '';
+      const isLink = /^https?:\/\//i.test(rawUrl) && rawUrl.length <= 4000;
+      const isData = /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(rawUrl) && rawUrl.length <= 300_000;
+      const imageUrl = isLink || isData ? rawUrl : '';
+      const title = clean(msg.title, 80) || 'Secret';
+      if (!imageUrl) return true;
       me.secret = { imageUrl, title };
       maybeStartPlaying(room);
       broadcast(room);

@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import confetti from 'canvas-confetti';
-import { Check, Copy, Crown, Link2, Lock, Search, Send } from 'lucide-react';
-import { AnswerType, CategoryPresetItem, MpPlayerView, MpRoomState } from '../types/game';
+import { Check, Copy, Crown, Link2, Send } from 'lucide-react';
+import { AnswerType, MpPlayerView, MpRoomState } from '../types/game';
 import { onlineService } from '../services/onlineGame';
 import { sound } from '../utils/audio';
 import { VoiceChatBar, useJoinVoice } from './VoiceChatBar';
+import { ChoosePictureScreen } from './ChoosePictureScreen';
+import { prepareSecretImage } from '../utils/image';
 
 /**
  * 3 / 4 players ONLINE. Every player is on their own device and joins the same room with a
@@ -155,9 +157,6 @@ const Lobby: React.FC<{ room: MpRoomState; lang: 'ar' | 'en'; onLeave: () => voi
 // ----------------------------------------------------------------------------------------
 const ChoosePicture: React.FC<{ room: MpRoomState; me: MpPlayerView; lang: 'ar' | 'en' }> = ({ room, me, lang }) => {
   const ar = lang === 'ar';
-  const [selected, setSelected] = useState<CategoryPresetItem | null>(null);
-  const [query, setQuery] = useState('');
-
   if (me.hasPicked) {
     return (
       <div className="game-card-surface p-4 border border-emerald-500/40 space-y-3 text-center">
@@ -177,49 +176,20 @@ const ChoosePicture: React.FC<{ room: MpRoomState; me: MpPlayerView; lang: 'ar' 
     );
   }
 
-  const q = query.toLowerCase().trim();
-  const items = room.category.presetItems.filter((i) => !q || i.nameAr.toLowerCase().includes(q) || i.nameEn.toLowerCase().includes(q));
-  const title = (i: CategoryPresetItem) => (ar ? i.nameAr : i.nameEn);
-
+  // Same picture picker as the 2-player mode: live search, upload from the phone, or paste.
+  // No suggested items: pick anything you like.
   return (
-    <div className="space-y-3">
-      <div className="game-card-surface p-3 border border-purple-500/40 space-y-2">
-        <p className="text-xs text-amber-300 font-bold bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20 text-center">
-          {ar ? `اختر صورتك السرية من (${room.category.nameAr}) — محدش هيشوفها غيرك!` : `Pick your secret picture from (${room.category.nameEn}) — only you can see it!`}
-        </p>
-        <div className="relative">
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={ar ? 'بحث...' : 'Search...'} className="w-full h-10 bg-[#0F172A] border border-slate-700 focus:border-purple-500 rounded-xl ps-9 pe-3 text-xs font-bold text-white placeholder-slate-500 focus:outline-none" />
-          <Search className="w-3.5 h-3.5 text-slate-500 absolute start-3 top-1/2 -translate-y-1/2" />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-2.5 max-h-[48vh] overflow-y-auto pe-1">
-        {items.map((item) => {
-          const on = selected?.id === item.id;
-          return (
-            <button key={item.id} type="button" onClick={() => { sound.playCardFlip(); setSelected(item); }} className={`p-2.5 rounded-2xl border-2 flex flex-col items-center gap-2 cursor-pointer active:scale-95 relative ${on ? 'bg-purple-600/25 border-purple-500 ring-2 ring-purple-400' : 'bg-[#0F172A] border-slate-800 text-slate-300'}`}>
-              <div className="w-full aspect-square rounded-xl overflow-hidden bg-slate-900/60 p-2 flex items-center justify-center relative">
-                <img src={item.imageUrl} alt={title(item)} className="w-full h-full object-contain rounded-lg" loading="lazy" />
-                {on && <div className="absolute top-1 end-1 w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center"><Check className="w-3.5 h-3.5" /></div>}
-              </div>
-              <div className="text-xs font-black text-white truncate w-full px-1">{title(item)}</div>
-            </button>
-          );
-        })}
-      </div>
-      <button
-        type="button"
-        disabled={!selected}
-        onClick={() => {
-          if (!selected) return;
-          sound.playCardFlip();
-          onlineService.mpSubmitPicture(selected.imageUrl, title(selected));
-        }}
-        className="w-full h-13 btn-premium-purple rounded-2xl font-black text-sm flex items-center justify-center gap-2 disabled:opacity-40 cursor-pointer active:scale-95"
-      >
-        <Lock className="w-4 h-4" />
-        <span>{ar ? 'قفل صورتي السرية 🔒' : 'Lock my secret picture 🔒'}</span>
-      </button>
-    </div>
+    <ChoosePictureScreen
+      chooserName={me.name}
+      opponentName=""
+      category={room.category}
+      ownPicture
+      lang={lang}
+      onConfirmPicture={async (choice) => {
+        const imageUrl = await prepareSecretImage(choice.imageUrl);
+        onlineService.mpSubmitPicture(imageUrl, choice.title);
+      }}
+    />
   );
 };
 

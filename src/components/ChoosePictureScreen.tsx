@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CategoryDefinition, CategoryPresetItem, PlayerChoice } from '../types/game';
+import { CategoryDefinition, PlayerChoice } from '../types/game';
 import { sound } from '../utils/audio';
 import { ImageSearchModal } from './ImageSearchModal';
 import {
@@ -7,7 +7,6 @@ import {
   X,
   ArrowRight,
   Upload,
-  Sparkles,
   Clipboard,
   Lock,
   Search,
@@ -21,6 +20,8 @@ interface ChoosePictureScreenProps {
   category: CategoryDefinition;
   onConfirmPicture: (choice: PlayerChoice) => void;
   isWaitingForRemoteOpponent?: boolean;
+  /** 3/4-player rooms: you pick your OWN secret picture (others guess it). */
+  ownPicture?: boolean;
   lang: 'ar' | 'en';
 }
 
@@ -30,6 +31,7 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
   category,
   onConfirmPicture,
   isWaitingForRemoteOpponent = false,
+  ownPicture = false,
   lang,
 }) => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -72,12 +74,6 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
       }
     };
     reader.readAsDataURL(file);
-  };
-
-  const handleSelectPreset = (item: CategoryPresetItem) => {
-    sound.playCardFlip();
-    setSelectedImage(item.imageUrl);
-    setSelectedTitle(lang === 'ar' ? item.nameAr : item.nameEn);
   };
 
   const handleConfirm = () => {
@@ -141,10 +137,7 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
 
       {/* Top Bar with Category & Game Badge */}
       <div className="flex items-center justify-between text-xs font-black">
-        <div className="bg-[#1E293B] px-3.5 py-1.5 rounded-xl border border-slate-700 flex items-center gap-1.5 shadow-sm">
-          <span>{category.icon}</span>
-          <span className="text-slate-200">{lang === 'ar' ? category.nameAr : category.nameEn}</span>
-        </div>
+        <div />
 
         <div className="flex items-center gap-1.5 text-blue-400 font-bold">
           <span>🎮</span>
@@ -183,12 +176,16 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
             </div>
 
             <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              {lang === 'ar' ? `اختر صورة لـ ${opponentName}` : `Choose for ${opponentName}`}
+              {ownPicture
+                ? (lang === 'ar' ? 'اختر صورتك السرية' : 'Choose your secret picture')
+                : (lang === 'ar' ? `اختر صورة لـ ${opponentName}` : `Choose for ${opponentName}`)}
             </h2>
             <p className="text-xs text-slate-400 font-bold">
-              {lang === 'ar'
-                ? `أنت تختار الصورة التي سيحاول ${opponentName} استنتاجها وتخمينها!`
-                : `You are choosing the secret image ${opponentName} must deduce!`}
+              {ownPicture
+                ? (lang === 'ar' ? 'محدش هيشوفها غيرك — والباقي هيحاولوا يخمّنوها بالأسئلة!' : 'Only you can see it — the others will try to guess it with questions!')
+                : lang === 'ar'
+                  ? `أنت تختار الصورة التي سيحاول ${opponentName} استنتاجها وتخمينها!`
+                  : `You are choosing the secret image ${opponentName} must deduce!`}
             </p>
           </div>
 
@@ -211,7 +208,7 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
                 </div>
                 <div className="text-[11px] text-purple-200 font-medium">
                   {lang === 'ar'
-                    ? 'ابحث عن أي شيء (مثل Pizza أو برجر) واختره بضغطة'
+                    ? 'ابحث عن أي شيء واختره بضغطة'
                     : 'Search for anything inside the game with 1 tap'}
                 </div>
               </div>
@@ -320,38 +317,6 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
               <span>{lang === 'ar' ? 'لصق (Ctrl+V)' : 'Paste Image'}</span>
             </button>
           </div>
-
-          {/* Quick Presets Grid from Category */}
-          {category.presetItems.length > 0 && (
-            <div className="pt-2 border-t border-slate-700/60">
-              <div className="text-[11px] font-bold text-slate-400 mb-2 flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-amber-400" />
-                <span>
-                  {lang === 'ar' ? `أو اختر عنصراً جاهزاً من (${category.nameAr}):` : 'Or pick a preset:'}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-4 gap-2">
-                {category.presetItems.slice(0, 8).map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => handleSelectPreset(item)}
-                    className="p-2 bg-[#0F172A] hover:bg-slate-800 border border-slate-700/80 hover:border-amber-400/80 rounded-xl text-center transition-all cursor-pointer flex flex-col items-center active:scale-95 shadow-sm"
-                  >
-                    <img
-                      src={item.imageUrl}
-                      alt={item.nameAr}
-                      className="w-9 h-9 object-contain mb-1"
-                    />
-                    <span className="text-[10px] font-bold text-slate-300 truncate max-w-full">
-                      {lang === 'ar' ? item.nameAr : item.nameEn}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Bottom Confirm Button: Big Modern Tactile Gold Button */}
           <div className="pt-2">

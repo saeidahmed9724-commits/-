@@ -32,7 +32,13 @@ try {
     check(`${n}p: non-host cannot start`, cs[0].state.phase === 'LOBBY');
     cs[0].send({ type: 'MP_START' }); await sleep(150);
     check(`${n}p: host starts -> CHOOSING`, cs.every((c) => c.state.phase === 'CHOOSING'));
-    for (let i = 0; i < n; i++) { cs[i].send({ type: 'MP_SUBMIT_PICTURE', imageUrl: 'u' + i, title: 'T' + i }); await sleep(80); }
+    cs[0].send({ type: 'MP_SUBMIT_PICTURE', imageUrl: 'javascript:alert(1)', title: 'x' }); await sleep(80);
+    check(`${n}p: unsafe image URL (javascript:) rejected`, !cs[0].state.mySecret);
+    cs[0].send({ type: 'MP_SUBMIT_PICTURE', imageUrl: 'data:image/png;base64,' + 'A'.repeat(310000), title: 'big' }); await sleep(150);
+    check(`${n}p: oversized image data rejected`, !cs[0].state.mySecret);
+    const SMALL_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    for (let i = 0; i < n; i++) { cs[i].send({ type: 'MP_SUBMIT_PICTURE', imageUrl: i === 0 ? SMALL_PNG : 'https://example.com/' + i + '.png', title: 'T' + i }); await sleep(80); }
+    check(`${n}p: uploaded (data URL) and searched (https) pictures are both accepted`, cs[0].state.mySecret?.imageUrl === SMALL_PNG && cs[1].state.mySecret?.imageUrl.startsWith('https://'));
     check(`${n}p: all picked -> PLAYING`, cs.every((c) => c.state.phase === 'PLAYING'));
     check(`${n}p: secrets are private (others cannot see my picture)`, cs.every((c) => c.state.players.every((p) => p.secret === undefined)) && cs[0].state.mySecret?.title === 'T0');
     const active = () => cs.find((c) => c.state.activePlayerId === c.id);

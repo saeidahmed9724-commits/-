@@ -266,3 +266,43 @@ export const CATEGORIES: CategoryDefinition[] = [
     ],
   },
 ];
+
+/**
+ * Neutral round "category": players pick ANY picture (live search, upload or paste).
+ * There are no suggested items. The old CATEGORIES (and their presetItems) are kept only as the
+ * pool the AI bot picks its own picture from.
+ */
+export const GENERAL_CATEGORY: CategoryDefinition = {
+  id: 'general',
+  nameAr: 'أي شيء',
+  nameEn: 'Anything',
+  icon: '🎯',
+  descriptionAr: 'اختر أي صورة تحبها',
+  descriptionEn: 'Pick any picture you like',
+  presetItems: [],
+  // Only the AI bot uses these: generic yes/no questions that fit any picture.
+  suggestedQuestionsAr: [
+    'هل هو كائن حي؟',
+    'هل بتستخدمه كل يوم؟',
+    'هل هو أكبر من حجم الكف؟',
+    'هل هو موجود في البيت؟',
+    'هل هو متحرك أو بيتحرك؟',
+    'هل ممكن تشوفه في الشارع؟',
+    'هل هو غالي الثمن؟',
+    'هل له لون واحد غالب؟',
+    'هل بيشتغل بالكهرباء؟',
+    'هل هو مشهور عالميًا؟',
+  ],
+  suggestedQuestionsEn: [
+    'Is it a living thing?',
+    'Do you use it every day?',
+    'Is it bigger than a hand?',
+    'Can it be found in a house?',
+    'Does it move?',
+    'Can you see it on the street?',
+    'Is it expensive?',
+    'Does it have one main color?',
+    'Does it use electricity?',
+    'Is it world famous?',
+  ],
+};

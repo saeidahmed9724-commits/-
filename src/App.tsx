@@ -16,7 +16,7 @@ import {
   PlayerCount,
   MpRoomState,
 } from './types/game';
-import { CATEGORIES } from './data/categories';
+import { CATEGORIES, GENERAL_CATEGORY } from './data/categories';
 import { sound } from './utils/audio';
 import { onlineService, OnlineRoomData } from './services/onlineGame';
 import { liveVoiceManager } from './utils/webrtcAudio';
@@ -48,7 +48,7 @@ export default function App() {
   const [gamePhase, setGamePhase] = useState<GamePhase>('HOME');
   const [gameMode, setGameMode] = useState<GameMode>('PASS_AND_PLAY');
   const [roomCode, setRoomCode] = useState<string>('A7K92');
-  const [currentCategory, setCurrentCategory] = useState<CategoryDefinition>(CATEGORIES[0]);
+  const [currentCategory, setCurrentCategory] = useState<CategoryDefinition>(GENERAL_CATEGORY);
   const [targetScore, setTargetScore] = useState<number>(3);
   const [roundNumber, setRoundNumber] = useState<number>(1);
 
@@ -387,10 +387,9 @@ export default function App() {
     } else if (gameMode === 'VS_BOT') {
       setP2Card(choice);
       // Bot picks an image for P1
-      let botPick = currentCategory.presetItems.find((p) => p.nameAr !== choice.title);
-      if (!botPick && currentCategory.presetItems.length > 0) {
-        botPick = currentCategory.presetItems[0];
-      }
+      // The bot picks its own picture from its built-in pool (any theme), never the human's pick.
+      const botPool = CATEGORIES.flatMap((c) => c.presetItems).filter((p) => p.nameAr !== choice.title);
+      const botPick = botPool[Math.floor(Math.random() * botPool.length)];
       setP1Card({
         imageUrl: botPick?.imageUrl || '',
         title: botPick ? (lang === 'ar' ? botPick.nameAr : botPick.nameEn) : 'عنصر سري',
@@ -561,8 +560,6 @@ export default function App() {
             nameP1={player1.name}
             nameP2={player2.name}
             roundNumber={roundNumber}
-            categoryName={gamePhase === 'PLAYING' || gamePhase === 'ROUND_REVEAL' ? (lang === 'ar' ? currentCategory.nameAr : currentCategory.nameEn) : undefined}
-            categoryIcon={gamePhase === 'PLAYING' || gamePhase === 'ROUND_REVEAL' ? currentCategory.icon : undefined}
             soundEnabled={soundEnabled}
             onToggleSound={() => setSoundEnabled(!soundEnabled)}
             onOpenRules={() => setIsRulesOpen(true)}

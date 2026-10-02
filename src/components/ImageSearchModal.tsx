@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CategoryDefinition } from '../types/game';
-import { searchImages, SearchImageItem, CATEGORY_SUGGESTIONS } from '../services/imageSearch';
+import { searchImages, SearchImageItem } from '../services/imageSearch';
 import { sound } from '../utils/audio';
 import {
   Search,
   X,
   Lock,
-  Sparkles,
   Loader2,
   CheckCircle2,
   AlertCircle,
@@ -46,12 +45,6 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
-  // Suggestions for this category
-  const suggestions =
-    CATEGORY_SUGGESTIONS[category.id] ||
-    CATEGORY_SUGGESTIONS['food'] ||
-    [];
-
   // Auto focus input on open and perform default search if query or first suggestion provided
   useEffect(() => {
     if (isOpen) {
@@ -59,10 +52,10 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
         inputRef.current?.focus();
       }, 100);
 
-      const defaultSearch = initialQuery || (category.id === 'food' ? 'Pizza' : category.id === 'animals' ? 'Lion' : 'Car');
-      if (!hasSearched && !query) {
-        setQuery(defaultSearch);
-        executeSearch(defaultSearch);
+      // No suggested/default search: start empty unless we were given a query to refine.
+      if (initialQuery && !hasSearched && !query) {
+        setQuery(initialQuery);
+        executeSearch(initialQuery);
       } else if (query && !hasSearched) {
         executeSearch(query);
       }
@@ -207,8 +200,8 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={
                   lang === 'ar'
-                    ? 'ابحث عن حاجة... (مثلاً: Pizza أو بيتزا)'
-                    : 'Search for anything... (e.g. Pizza)'
+                    ? 'ابحث عن أي شيء...'
+                    : 'Search for anything...'
                 }
                 className="w-full h-12 bg-[#1E293B] border border-slate-700 focus:border-blue-500 rounded-xl ps-9 pe-8 text-xs font-bold text-white placeholder:text-slate-500 focus:outline-none transition-colors shadow-inner"
               />
@@ -242,28 +235,6 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
             </button>
           </form>
 
-          {/* Quick Suggestions Chips */}
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-            <span className="text-[10px] font-bold text-slate-400 shrink-0 flex items-center gap-1">
-              <Sparkles className="w-2.5 h-2.5 text-amber-400" />
-              <span>{lang === 'ar' ? 'أفكار سريعة:' : 'Quick:'}</span>
-            </span>
-            {suggestions.map((sug) => (
-              <button
-                key={sug.query}
-                type="button"
-                onClick={() => handleSuggestionClick(sug.query, sug.labelAr)}
-                className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-all whitespace-nowrap cursor-pointer shrink-0 flex items-center gap-1 active:scale-95 ${
-                  query.toLowerCase() === sug.query.toLowerCase()
-                    ? 'bg-blue-600 text-white border-blue-500'
-                    : 'bg-[#1E293B] text-slate-300 hover:text-white border-slate-700/80 hover:border-blue-400'
-                }`}
-              >
-                <span>{sug.icon}</span>
-                <span>{lang === 'ar' ? sug.labelAr : sug.labelEn}</span>
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Scrollable Content Body (Results & Preview) */}
@@ -294,21 +265,9 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
               </h4>
               <p className="text-xs text-slate-400 font-medium max-w-xs mx-auto">
                 {lang === 'ar'
-                  ? 'جرّب كتابة كلمة أخرى بالعربية أو الإنجليزية، أو اختر من الاقتراحات السريعة بالأعلى.'
-                  : 'Try typing in English (e.g. "Pizza", "Lion", "Car") or tap one of the suggestion chips above.'}
+                  ? 'جرّب كتابة كلمة أخرى بالعربية أو الإنجليزية.'
+                  : 'Try another word, in English or Arabic.'}
               </p>
-              <div className="flex flex-wrap justify-center gap-1.5 pt-2">
-                {suggestions.slice(0, 4).map((sug) => (
-                  <button
-                    key={sug.query}
-                    type="button"
-                    onClick={() => handleSuggestionClick(sug.query, sug.labelAr)}
-                    className="text-xs font-bold px-3 py-1.5 bg-[#0F172A] border border-slate-700 text-slate-300 hover:text-white rounded-xl cursor-pointer"
-                  >
-                    {sug.icon} {lang === 'ar' ? sug.labelAr : sug.labelEn}
-                  </button>
-                ))}
-              </div>
             </div>
           )}
 
@@ -323,8 +282,8 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
               </h4>
               <p className="text-xs text-slate-400 font-medium max-w-xs mx-auto">
                 {lang === 'ar'
-                  ? 'اكتب مثلاً: Pizza، برجر، قطة، سيارة، وسنعرض لك صوراً فورية تختار منها مباشرة دون مغادرة اللعبة.'
-                  : 'Type Pizza, Lion, Car, etc. to pick a secret photo without ever leaving the app.'}
+                  ? 'اكتب اسم أي شيء وسنعرض لك صوراً فورية تختار منها مباشرة دون مغادرة اللعبة.'
+                  : 'Type the name of anything to pick a secret photo without ever leaving the app.'}
               </p>
             </div>
           )}

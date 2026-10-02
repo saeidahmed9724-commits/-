@@ -180,7 +180,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
         const pool = lang === 'ar' ? category.suggestedQuestionsAr : category.suggestedQuestionsEn;
         const randomQ = pool.length > 0
           ? pool[Math.floor(Math.random() * pool.length)]
-          : (lang === 'ar' ? 'هل صورتي حاجة بتتاكل؟' : 'Is my item edible?');
+          : (lang === 'ar' ? 'هل هو كائن حي؟' : 'Is it a living thing?');
         sound.playTurnChime();
         setPendingQuestionLocal({
           id: 'q-' + Date.now(),
@@ -350,9 +350,6 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
           <div className="px-3 py-1 bg-[#0F172A] border border-slate-700/80 rounded-full text-[11px] font-bold text-slate-300 font-mono">
             {lang === 'ar' ? `جولة ${roundNumber}` : `Round ${roundNumber}`}
           </div>
-          <span className="text-[10px] font-medium text-slate-400 mt-0.5">
-            {category.icon} {lang === 'ar' ? category.nameAr : category.nameEn}
-          </span>
         </div>
 
         {/* P2 Score Badge */}
