@@ -394,7 +394,7 @@ const STUN_SERVERS = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
-app.get('/api/ice-servers', async (_req, res) => {
+app.get(['/api/ice-servers', '/api/voice/ice-servers'], async (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const iceServers: any[] = [...STUN_SERVERS];
   let turn: 'metered' | 'coturn-temp' | 'static' | 'none' = 'none';

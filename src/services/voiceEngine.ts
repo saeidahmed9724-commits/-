@@ -40,6 +40,41 @@ class UnifiedVoiceEngine {
 
   private lastSpeakingBroadcast: number = 0;
 
+  private iceServers: RTCIceServer[] = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ];
+  private iceServersLoaded: boolean = false;
+  private pendingIceServersPromise: Promise<RTCIceServer[]> | null = null;
+  private candidateQueue: Map<string, RTCIceCandidateInit[]> = new Map();
+
+  async getIceServers(): Promise<RTCIceServer[]> {
+    if (this.iceServersLoaded) {
+      return this.iceServers;
+    }
+    if (this.pendingIceServersPromise) {
+      return this.pendingIceServersPromise;
+    }
+    this.pendingIceServersPromise = (async () => {
+      try {
+        const res = await fetch('/api/voice/ice-servers', { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.iceServers) && data.iceServers.length > 0) {
+            this.iceServers = data.iceServers;
+            this.iceServersLoaded = true;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not load TURN/ICE servers from /api/voice/ice-servers, falling back to STUN:', err);
+      } finally {
+        this.pendingIceServersPromise = null;
+      }
+      return this.iceServers;
+    })();
+    return this.pendingIceServersPromise;
+  }
+
   getSnapshot() {
     return {
       isMicOn: this.isMicOn,
@@ -82,6 +117,7 @@ class UnifiedVoiceEngine {
     this.isMicOn = false;
     this.isSpeaking = false;
     this.error = null;
+    this.getIceServers().catch(() => {});
     this.emit();
   }
 
@@ -182,11 +218,12 @@ class UnifiedVoiceEngine {
     if (this.peers.has(remotePlayerId)) return;
 
     try {
+      const iceServers = await this.getIceServers();
+      const forceRelay = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('relay') === '1';
+
       const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-        ],
+        iceServers,
+        iceTransportPolicy: forceRelay ? 'relay' : 'all',
       });
 
       this.peers.set(remotePlayerId, pc);
@@ -217,7 +254,10 @@ class UnifiedVoiceEngine {
         if (event.candidate && this.sendSignalCallback) {
           this.sendSignalCallback({
             targetPlayerId: remotePlayerId,
-            signal: { type: 'candidate', candidate: event.candidate },
+            signal: {
+              type: 'candidate',
+              candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate,
+            },
           });
         }
       };
@@ -251,7 +291,7 @@ class UnifiedVoiceEngine {
     try {
       if (signal.type === 'offer') {
         // Ensure local stream is attached
-        if (!this.localStream) {
+        if (!this.localStream && this.isMicOn) {
           await this.getLocalStream();
         }
         if (this.localStream) {
@@ -268,6 +308,8 @@ class UnifiedVoiceEngine {
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
+        await this.flushQueuedCandidates(fromPlayerId, pc);
+
         if (this.sendSignalCallback) {
           this.sendSignalCallback({
             targetPlayerId: fromPlayerId,
@@ -276,11 +318,37 @@ class UnifiedVoiceEngine {
         }
       } else if (signal.type === 'answer') {
         await pc.setRemoteDescription(new RTCSessionDescription(signal.answer));
+        await this.flushQueuedCandidates(fromPlayerId, pc);
       } else if (signal.type === 'candidate' && signal.candidate) {
-        await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        if (pc.remoteDescription && pc.remoteDescription.type) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          } catch (e) {
+            console.warn('Failed to add immediate ICE candidate:', e);
+          }
+        } else {
+          if (!this.candidateQueue.has(fromPlayerId)) {
+            this.candidateQueue.set(fromPlayerId, []);
+          }
+          this.candidateQueue.get(fromPlayerId)!.push(signal.candidate);
+        }
       }
     } catch (err) {
       console.warn('Signal handling error:', err);
+    }
+  }
+
+  private async flushQueuedCandidates(playerId: string, pc: RTCPeerConnection) {
+    const queue = this.candidateQueue.get(playerId);
+    if (queue && queue.length > 0) {
+      for (const cand of queue) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(cand));
+        } catch (e) {
+          console.warn('Queued ICE candidate failed:', e);
+        }
+      }
+      this.candidateQueue.delete(playerId);
     }
   }
 
@@ -308,6 +376,7 @@ class UnifiedVoiceEngine {
       audioEl.srcObject = null;
       this.remoteAudios.delete(playerId);
     }
+    this.candidateQueue.delete(playerId);
     delete this.peerStates[playerId];
     this.emit();
   }
@@ -389,6 +458,7 @@ class UnifiedVoiceEngine {
       audio.srcObject = null;
     });
     this.remoteAudios.clear();
+    this.candidateQueue.clear();
     this.peerStates = {};
     this.emit();
   }

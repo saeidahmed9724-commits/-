@@ -282,20 +282,16 @@ export default function App() {
     setIsPlayerCountModalOpen(false);
 
     if (mode === 'ONLINE_2') {
-      // 🎮 2 Players Online
-      handlePlayOnline();
+      // 🎮 2 Players Online — عن بعد بكود الغرفة والدعوة
+      handlePlayOnline(2);
     } else if (mode === 'ONLINE_3') {
-      // 👥 3 Players Online
-      setPlayerCount(3);
-      setGameMode('ROOM_CODE');
-      setGamePhase('MULTIPLAYER_SETUP');
+      // 👥 3 Players Online — عن بعد بكود الغرفة والدعوة
+      handlePlayOnline(3);
     } else if (mode === 'ONLINE_4') {
-      // 👥 4 Players Online
-      setPlayerCount(4);
-      setGameMode('ROOM_CODE');
-      setGamePhase('MULTIPLAYER_SETUP');
+      // 👥 4 Players Online — عن بعد بكود الغرفة والدعوة
+      handlePlayOnline(4);
     } else if (mode === 'PASS_AND_PLAY_2') {
-      // 📱 2 Players — Same Device
+      // 📱 2 Players — Same Device — على نفس الجهاز بالتناوب
       handlePlayOffline();
     }
   };
@@ -369,8 +365,9 @@ export default function App() {
     setGamePhase('MULTIPLAYER_PLAYING');
   };
 
-  const handlePlayOnline = () => {
+  const handlePlayOnline = (count: PlayerCount = 2) => {
     setGameMode('ROOM_CODE');
+    setPlayerCount(count);
     const code = Math.random().toString(36).substring(2, 7).toUpperCase();
     setRoomCode(code);
     setGamePhase('CREATE_GAME');
@@ -631,15 +628,15 @@ export default function App() {
         {/* 1. HOME SCREEN */}
         {gamePhase === 'HOME' && (
           <HomeScreen
-            onCreateOnlineGame={() => handleOpenPlayerCountModal('ONLINE')}
+            onCreateOnlineGame={() => setIsPlayerCountModalOpen(true)}
             onJoinRoom={() => {
               setInitialJoinCode('');
               setGamePhase('JOIN_GAME');
             }}
-            onPlayOffline={() => handleOpenPlayerCountModal('OFFLINE')}
+            onPlayOffline={handlePlayOffline}
             onPlayWithAI={handlePlayWithAI}
             onOpenRules={() => setIsRulesOpen(true)}
-            onOpenMultiplayer={() => handleOpenPlayerCountModal('OFFLINE')}
+            onOpenMultiplayer={() => setIsPlayerCountModalOpen(true)}
             lang={lang}
             soundEnabled={soundEnabled}
             onToggleSound={() => setSoundEnabled(!soundEnabled)}
