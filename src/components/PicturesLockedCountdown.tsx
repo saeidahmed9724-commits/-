@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { sound } from '../utils/audio';
 
 interface PicturesLockedCountdownProps {
@@ -11,6 +11,8 @@ export const PicturesLockedCountdown: React.FC<PicturesLockedCountdownProps> = (
   lang,
 }) => {
   const [count, setCount] = useState<number>(3);
+  const onCompleteRef = useRef(onCountdownComplete);
+  onCompleteRef.current = onCountdownComplete;
 
   useEffect(() => {
     sound.playTurnChime();
@@ -19,7 +21,7 @@ export const PicturesLockedCountdown: React.FC<PicturesLockedCountdownProps> = (
         if (prev <= 1) {
           clearInterval(timer);
           sound.playCardFlip();
-          setTimeout(onCountdownComplete, 400);
+          setTimeout(() => onCompleteRef.current(), 400);
           return 0;
         }
         sound.playTurnChime();
@@ -28,7 +30,7 @@ export const PicturesLockedCountdown: React.FC<PicturesLockedCountdownProps> = (
     }, 900);
 
     return () => clearInterval(timer);
-  }, [onCountdownComplete]);
+  }, []);
 
   return (
     <div className="w-full max-w-md mx-auto py-6 sm:py-10 px-4 text-center animate-scale-up space-y-6 relative">

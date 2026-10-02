@@ -72,8 +72,12 @@ export interface PendingQuestionData {
   question: string;
   isVoice?: boolean;
   audioData?: string;
-  askedByRole: 'host' | 'guest';
-  answeredByRole: 'host' | 'guest';
+  askerId?: string;
+  askerName?: string;
+  targetPlayerId?: string;
+  targetPlayerName?: string;
+  askedByRole?: 'host' | 'guest';
+  answeredByRole?: 'host' | 'guest';
 }
 
 export interface Player {

@@ -1,25 +1,48 @@
 import { CategoryDefinition, AnswerType } from '../types/game';
+import { unifiedVoiceEngine } from './voiceEngine';
+
+export interface OnlineRoomPlayerSummary {
+  id: string;
+  name: string;
+  score: number;
+  roleIndex: number;
+  isHost: boolean;
+  isReady: boolean;
+  isMuted: boolean;
+  isSpeaking: boolean;
+}
 
 export interface OnlineRoomData {
   code: string;
+  maxPlayers: number;
   category: CategoryDefinition;
   targetScore: number;
   roundNumber: number;
   phase: 'LOBBY' | 'CHOOSING' | 'COUNTDOWN' | 'PLAYING' | 'REVEAL' | 'GAMEOVER';
-  activePlayerRole: 'host' | 'guest';
+  activePlayerRole?: 'host' | 'guest';
+  activePlayerIndex?: number;
+  activePlayerId?: string;
+  myPlayerId?: string;
   questions: Array<{
     id: string;
     question: string;
     isVoice?: boolean;
+    isVoiceAnswer?: boolean;
     audioData?: string;
-    askedByRole: 'host' | 'guest';
-    answeredByRole: 'host' | 'guest';
+    askerId?: string;
+    askerName?: string;
+    targetPlayerId?: string;
+    targetPlayerName?: string;
+    askedByRole?: 'host' | 'guest';
+    answeredByRole?: 'host' | 'guest';
     answer: AnswerType;
     note?: string;
     timestamp: number;
+    wasWinningGuess?: boolean;
   }>;
   pendingGuess?: {
     guesserRole: 'host' | 'guest';
+    guesserId?: string;
     guesserName: string;
     guessText: string;
   };
@@ -28,15 +51,23 @@ export interface OnlineRoomData {
     question: string;
     isVoice?: boolean;
     audioData?: string;
-    askedByRole: 'host' | 'guest';
-    answeredByRole: 'host' | 'guest';
+    askerId?: string;
+    askerName?: string;
+    targetPlayerId?: string;
+    targetPlayerName?: string;
+    askedByRole?: 'host' | 'guest';
+    answeredByRole?: 'host' | 'guest';
   };
   winnerRole?: 'host' | 'guest';
+  winnerPlayerId?: string;
+  winnerPlayerName?: string;
   correctGuess?: string;
-  host: { name: string; score: number; isReady: boolean };
-  guest?: { name: string; score: number; isReady: boolean };
-  mySecretCard: { isSecret: boolean; chosenBy?: string; imageUrl?: string; title?: string };
+  players?: OnlineRoomPlayerSummary[];
+  host?: { id?: string; name: string; score: number; isReady: boolean };
+  guest?: { id?: string; name: string; score: number; isReady: boolean };
+  mySecretCard?: { isSecret?: boolean; chosenBy?: string; imageUrl?: string; title?: string };
   opponentVisibleCard?: { imageUrl: string; title: string };
+  targets?: Array<{ ownerId: string; ownerName: string; isSolved: boolean; revealedImage?: { imageUrl: string; title: string } }>;
 }
 
 export type OnlineEventCallback = (event: {
@@ -47,6 +78,13 @@ export type OnlineEventCallback = (event: {
   guesserRole?: string;
   guess?: string;
   nextRole?: string;
+  peerId?: string;
+  name?: string;
+  signal?: any;
+  fromPlayerId?: string;
+  playerId?: string;
+  isMuted?: boolean;
+  isSpeaking?: boolean;
 }) => void;
 
 class OnlineGameService {
@@ -54,6 +92,26 @@ class OnlineGameService {
   private listeners: Set<OnlineEventCallback> = new Set();
   public userRole: 'host' | 'guest' | null = null;
   public roomCode: string | null = null;
+  public myPlayerId: string | null = null;
+  public maxPlayers: number = 2;
+
+  constructor() {
+    // Hook unified voice engine to send signals via websocket
+    unifiedVoiceEngine.setCallbacks(
+      (signalPayload) => {
+        this.send({
+          type: 'VOICE_SIGNAL',
+          ...signalPayload,
+        });
+      },
+      (statusPayload) => {
+        this.send({
+          type: 'VOICE_STATUS',
+          ...statusPayload,
+        });
+      }
+    );
+  }
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -79,6 +137,25 @@ class OnlineGameService {
         this.socket.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
+
+            if (data.type === 'ROOM_CREATED' || data.type === 'ROOM_JOINED') {
+              if (data.playerId) this.myPlayerId = data.playerId;
+              if (data.maxPlayers) this.maxPlayers = data.maxPlayers;
+            }
+
+            // WebRTC peer connections orchestration
+            if (data.type === 'PEER_JOINED' && data.peerId) {
+              // Existing peer connects to the newly joined peer as initiator
+              unifiedVoiceEngine.connectToPeer(data.peerId, true);
+            } else if (data.type === 'VOICE_SIGNAL' && data.signal) {
+              const fromId = data.fromPlayerId || (data.fromRole === 'host' ? 'p1' : 'p2');
+              unifiedVoiceEngine.handleSignal(fromId, data.signal);
+            } else if (data.type === 'PLAYER_VOICE_STATUS' && data.playerId) {
+              unifiedVoiceEngine.handlePeerStatus(data.playerId, data.isMuted, data.isSpeaking);
+            } else if (data.type === 'PEER_LEFT' && data.peerId) {
+              unifiedVoiceEngine.removePeer(data.peerId);
+            }
+
             this.notify(data);
           } catch {
             // ignore
@@ -111,16 +188,24 @@ class OnlineGameService {
     }
   }
 
-  async createRoom(code: string, playerName: string, category: CategoryDefinition, targetScore: number) {
+  async createRoom(
+    code: string,
+    playerName: string,
+    category: CategoryDefinition,
+    targetScore: number,
+    maxPlayers: number = 2
+  ) {
     await this.connect();
     this.roomCode = code.toUpperCase();
     this.userRole = 'host';
+    this.maxPlayers = maxPlayers;
     this.send({
       type: 'CREATE_ROOM',
       code: this.roomCode,
       playerName,
       category,
       targetScore,
+      maxPlayers,
     });
   }
 
@@ -147,19 +232,29 @@ class OnlineGameService {
     });
   }
 
-  askQuestion(question: string, isVoice?: boolean, audioData?: string) {
+  askQuestion(question: string, isVoice?: boolean, audioData?: string, targetPlayerId?: string) {
     this.send({
       type: 'ASK_QUESTION',
       question,
       isVoice: Boolean(isVoice),
       audioData,
+      targetPlayerId,
     });
   }
 
-  sendVoiceSignal(signal: any) {
+  sendVoiceSignal(signal: any, targetPlayerId?: string) {
     this.send({
       type: 'VOICE_SIGNAL',
       signal,
+      targetPlayerId,
+    });
+  }
+
+  sendVoiceStatus(isMuted: boolean, isSpeaking: boolean) {
+    this.send({
+      type: 'VOICE_STATUS',
+      isMuted,
+      isSpeaking,
     });
   }
 
@@ -168,7 +263,8 @@ class OnlineGameService {
     answer: AnswerType,
     note?: string,
     questionId?: string,
-    isVoiceAnswer?: boolean
+    isVoiceAnswer?: boolean,
+    wasWinningGuess?: boolean
   ) {
     this.send({
       type: 'ANSWER_QUESTION',
@@ -177,13 +273,15 @@ class OnlineGameService {
       note,
       questionId,
       isVoiceAnswer: Boolean(isVoiceAnswer),
+      wasWinningGuess: Boolean(wasWinningGuess),
     });
   }
 
-  declareWin(question?: string) {
+  declareWin(question?: string, askerId?: string) {
     this.send({
       type: 'DECLARE_WIN',
       question,
+      askerId,
     });
   }
 
@@ -212,7 +310,10 @@ class OnlineGameService {
     }
     this.roomCode = null;
     this.userRole = null;
+    this.myPlayerId = null;
+    unifiedVoiceEngine.destroy();
   }
 }
 
 export const onlineService = new OnlineGameService();
+

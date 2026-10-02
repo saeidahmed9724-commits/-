@@ -1,5 +1,5 @@
 import React from 'react';
-import { Volume2, VolumeX, HelpCircle, RotateCcw } from 'lucide-react';
+import { Volume2, VolumeX, HelpCircle, RotateCcw, Mic, MicOff } from 'lucide-react';
 import { sound } from '../utils/audio';
 import { GameLogoBanner } from './GameLogoBanner';
 
@@ -18,6 +18,11 @@ interface HeaderProps {
   lang: 'ar' | 'en';
   onToggleLang: () => void;
   showScore?: boolean;
+  // Online Voice Chat Props (Only displayed in Online modes, NEVER in Same Device!)
+  isOnline?: boolean;
+  isMicOn?: boolean;
+  isSpeaking?: boolean;
+  onToggleMic?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -32,6 +37,10 @@ export const Header: React.FC<HeaderProps> = ({
   onRestartMatch,
   lang,
   showScore = true,
+  isOnline = false,
+  isMicOn = false,
+  isSpeaking = false,
+  onToggleMic,
 }) => {
   return (
     <header className="w-full bg-[#0F172A]/90 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40 px-3 py-2.5">
@@ -49,7 +58,40 @@ export const Header: React.FC<HeaderProps> = ({
             <RotateCcw className="w-4 h-4" />
           </button>
 
-          {/* 2. Sound Toggle */}
+          {/* 2. Persistent Live Room Microphone Button (ONLY in Online modes, NEVER in Same Device!) */}
+          {isOnline && onToggleMic && (
+            <button
+              type="button"
+              onClick={() => {
+                sound.playTurnChime();
+                onToggleMic();
+              }}
+              aria-label="Toggle Microphone"
+              title={
+                isMicOn
+                  ? (lang === 'ar' ? 'المايك شغال ومفتوح 🟢 (اضغط للقفل)' : 'Mic is Active 🟢 (Tap to mute)')
+                  : (lang === 'ar' ? 'المايك مقفول 🔇 (اضغط للفتح)' : 'Mic is Muted 🔇 (Tap to unmute)')
+              }
+              className={`w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 relative ${
+                isMicOn
+                  ? 'bg-emerald-500/25 border border-emerald-400/60 text-emerald-300 shadow-md shadow-emerald-500/25'
+                  : 'bg-slate-800/80 border border-slate-700 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {isMicOn ? (
+                <>
+                  {isSpeaking && (
+                    <span className="absolute inset-0 rounded-xl border border-emerald-400 animate-ping opacity-75 pointer-events-none" />
+                  )}
+                  <Mic className="w-4 h-4 text-emerald-400 animate-pulse" />
+                </>
+              ) : (
+                <MicOff className="w-4 h-4 text-slate-400" />
+              )}
+            </button>
+          )}
+
+          {/* 3. Sound Toggle */}
           <button
             type="button"
             onClick={() => {
@@ -67,7 +109,7 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </button>
 
-          {/* 3. Rules Modal */}
+          {/* 4. Rules Modal */}
           <button
             type="button"
             onClick={onOpenRules}
@@ -110,3 +152,4 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
+

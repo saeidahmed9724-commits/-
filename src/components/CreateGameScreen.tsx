@@ -7,6 +7,7 @@ import { GameLogoBanner } from './GameLogoBanner';
 
 interface CreateGameScreenProps {
   mode: GameMode;
+  playerCount?: number;
   onConfirmCreate: (data: {
     playerName: string;
     opponentName: string;
@@ -19,6 +20,7 @@ interface CreateGameScreenProps {
 
 export const CreateGameScreen: React.FC<CreateGameScreenProps> = ({
   mode,
+  playerCount = 2,
   onConfirmCreate,
   onBack,
   lang,
@@ -70,12 +72,18 @@ export const CreateGameScreen: React.FC<CreateGameScreenProps> = ({
         {/* Header Title (Clean, Modern Typography) */}
         <div className="text-center space-y-1">
           <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            {lang === 'ar' ? 'إعداد لعبة جديدة' : 'Game Setup'}
+            {mode === 'ROOM_CODE'
+              ? (lang === 'ar' ? `إنشاء غرفة أونلاين (${playerCount} لاعبين) 📱` : `Create Online Room (${playerCount} Players) 📱`)
+              : mode === 'PASS_AND_PLAY'
+              ? (lang === 'ar' ? '2 Players — Same Device 📱' : '2 Players — Same Device 📱')
+              : (lang === 'ar' ? 'لعب ضد الروبوت 🤖' : 'Solo vs Bot 🤖')}
           </h2>
           <p className="text-xs sm:text-sm text-slate-400 font-bold">
-            {lang === 'ar'
-              ? 'اختر تصنيف الجولة وأسماء اللاعبين للبدء'
-              : 'Choose category and enter player names'}
+            {mode === 'ROOM_CODE'
+              ? (lang === 'ar' ? 'ستحصل على كود الغرفة لمشاركته مع أصدقائك لينضم كل لاعب من جهازه' : 'You will get a room code so friends join from their own devices')
+              : mode === 'PASS_AND_PLAY'
+              ? (lang === 'ar' ? 'تناوب اللعب على نفس الموبايل/الجهاز (بدون مايك وبدون إنترنت)' : 'Pass and play on this device (no mic needed)')
+              : (lang === 'ar' ? 'العب وتحدى الذكاء الاصطناعي' : 'Play and challenge the AI')}
           </p>
         </div>
 
