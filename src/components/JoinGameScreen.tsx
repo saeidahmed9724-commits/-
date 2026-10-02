@@ -75,12 +75,21 @@ export const JoinGameScreen: React.FC<JoinGameScreenProps> = ({
 
     try {
       await onJoinRoom(cleanCode, cleanName);
-    } catch {
+    } catch (err) {
       sound.playWrongBuzzer();
+      const reason = err instanceof Error ? err.message : '';
+      const known: Record<string, [string, string]> = {
+        'Room is full': ['الغرفة ممتلئة بالفعل', 'The room is full'],
+        'Game already started': ['اللعبة بدأت بالفعل ولا يمكن الانضمام الآن', 'The game has already started'],
+        'Name already taken in this room': ['الاسم مستخدم في الغرفة، اختر اسمًا آخر', 'That name is taken in this room, pick another'],
+      };
+      const hit = known[reason];
       setErrorMessage(
-        lang === 'ar'
-          ? 'تعذر العثور على الغرفة أو الاتصال بها. تأكد من صحة الكود.'
-          : 'Could not find or connect to room. Please check the code.'
+        hit
+          ? (lang === 'ar' ? hit[0] : hit[1])
+          : lang === 'ar'
+            ? 'تعذر العثور على الغرفة أو الاتصال بها. تأكد من صحة الكود.'
+            : 'Could not find or connect to room. Please check the code.'
       );
     } finally {
       setIsLoading(false);

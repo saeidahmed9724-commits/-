@@ -1,5 +1,4 @@
 import { CategoryDefinition, AnswerType } from '../types/game';
-import { unifiedVoiceEngine } from './voiceEngine';
 
 export interface OnlineRoomPlayerSummary {
   id: string;
@@ -33,8 +32,8 @@ export interface OnlineRoomData {
     askerName?: string;
     targetPlayerId?: string;
     targetPlayerName?: string;
-    askedByRole?: 'host' | 'guest';
-    answeredByRole?: 'host' | 'guest';
+    askedByRole: 'host' | 'guest';
+    answeredByRole: 'host' | 'guest';
     answer: AnswerType;
     note?: string;
     timestamp: number;
@@ -55,8 +54,8 @@ export interface OnlineRoomData {
     askerName?: string;
     targetPlayerId?: string;
     targetPlayerName?: string;
-    askedByRole?: 'host' | 'guest';
-    answeredByRole?: 'host' | 'guest';
+    askedByRole: 'host' | 'guest';
+    answeredByRole: 'host' | 'guest';
   };
   winnerRole?: 'host' | 'guest';
   winnerPlayerId?: string;
@@ -78,13 +77,10 @@ export type OnlineEventCallback = (event: {
   guesserRole?: string;
   guess?: string;
   nextRole?: string;
-  peerId?: string;
-  name?: string;
+  from?: string;
+  fromRole?: string;
   signal?: any;
-  fromPlayerId?: string;
-  playerId?: string;
-  isMuted?: boolean;
-  isSpeaking?: boolean;
+  mpRoom?: any;
 }) => void;
 
 class OnlineGameService {
@@ -92,26 +88,8 @@ class OnlineGameService {
   private listeners: Set<OnlineEventCallback> = new Set();
   public userRole: 'host' | 'guest' | null = null;
   public roomCode: string | null = null;
-  public myPlayerId: string | null = null;
-  public maxPlayers: number = 2;
-
-  constructor() {
-    // Hook unified voice engine to send signals via websocket
-    unifiedVoiceEngine.setCallbacks(
-      (signalPayload) => {
-        this.send({
-          type: 'VOICE_SIGNAL',
-          ...signalPayload,
-        });
-      },
-      (statusPayload) => {
-        this.send({
-          type: 'VOICE_STATUS',
-          ...statusPayload,
-        });
-      }
-    );
-  }
+  /** My seat id in a 3/4-player room (also my voice id). Null in the 2-player system. */
+  public mpPlayerId: string | null = null;
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -137,24 +115,6 @@ class OnlineGameService {
         this.socket.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-
-            if (data.type === 'ROOM_CREATED' || data.type === 'ROOM_JOINED') {
-              if (data.playerId) this.myPlayerId = data.playerId;
-              if (data.maxPlayers) this.maxPlayers = data.maxPlayers;
-            }
-
-            // WebRTC peer connections orchestration
-            if (data.type === 'PEER_JOINED' && data.peerId) {
-              // Existing peer connects to the newly joined peer as initiator
-              unifiedVoiceEngine.connectToPeer(data.peerId, true);
-            } else if (data.type === 'VOICE_SIGNAL' && data.signal) {
-              const fromId = data.fromPlayerId || (data.fromRole === 'host' ? 'p1' : 'p2');
-              unifiedVoiceEngine.handleSignal(fromId, data.signal);
-            } else if (data.type === 'PLAYER_VOICE_STATUS' && data.playerId) {
-              unifiedVoiceEngine.handlePeerStatus(data.playerId, data.isMuted, data.isSpeaking);
-            } else if (data.type === 'PEER_LEFT' && data.peerId) {
-              unifiedVoiceEngine.removePeer(data.peerId);
-            }
 
             this.notify(data);
           } catch {
@@ -192,32 +152,100 @@ class OnlineGameService {
     code: string,
     playerName: string,
     category: CategoryDefinition,
-    targetScore: number,
-    maxPlayers: number = 2
+    targetScore: number
   ) {
     await this.connect();
     this.roomCode = code.toUpperCase();
     this.userRole = 'host';
-    this.maxPlayers = maxPlayers;
     this.send({
       type: 'CREATE_ROOM',
       code: this.roomCode,
       playerName,
       category,
       targetScore,
-      maxPlayers,
     });
   }
 
-  async joinRoom(code: string, playerName: string) {
+  /**
+   * Join a room by code. The same code box serves 2-player and 3/4-player rooms: the server
+   * answers with ROOM_JOINED (2 players) or MP_JOINED (3/4 players), or an ERROR (rejected).
+   */
+  async joinRoom(code: string, playerName: string): Promise<'ROOM_JOINED' | 'MP_JOINED'> {
     await this.connect();
     this.roomCode = code.toUpperCase();
     this.userRole = 'guest';
-    this.send({
-      type: 'JOIN_ROOM',
-      code: this.roomCode,
-      playerName,
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        off();
+        reject(new Error('timeout'));
+      }, 6000);
+      const off = this.subscribe((e) => {
+        if (e.type === 'ROOM_JOINED' || e.type === 'MP_JOINED') {
+          clearTimeout(timer);
+          off();
+          this.mpPlayerId = e.type === 'MP_JOINED' ? (e as any).playerId : null;
+          resolve(e.type);
+        } else if (e.type === 'ERROR') {
+          clearTimeout(timer);
+          off();
+          reject(new Error(e.message || 'error'));
+        }
+      });
+      this.send({ type: 'JOIN_ROOM', code: this.roomCode, playerName });
     });
+  }
+
+  // ---- 3 / 4 players online ----
+
+  async mpCreateRoom(code: string, playerName: string, category: CategoryDefinition, maxPlayers: 3 | 4): Promise<void> {
+    await this.connect();
+    this.roomCode = code.toUpperCase();
+    this.userRole = 'host';
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        off();
+        reject(new Error('timeout'));
+      }, 6000);
+      const off = this.subscribe((e) => {
+        if (e.type === 'MP_JOINED') {
+          clearTimeout(timer);
+          off();
+          this.mpPlayerId = (e as any).playerId;
+          resolve();
+        } else if (e.type === 'ERROR') {
+          clearTimeout(timer);
+          off();
+          reject(new Error(e.message || 'error'));
+        }
+      });
+      this.send({ type: 'MP_CREATE', code: this.roomCode, playerName, category, maxPlayers });
+    });
+  }
+
+  mpStart() {
+    this.send({ type: 'MP_START' });
+  }
+  mpSubmitPicture(imageUrl: string, title: string) {
+    this.send({ type: 'MP_SUBMIT_PICTURE', imageUrl, title });
+  }
+  mpAsk(targetId: string, question: string) {
+    this.send({ type: 'MP_ASK', targetId, question });
+  }
+  mpAnswer(answer: AnswerType, note?: string) {
+    this.send({ type: 'MP_ANSWER', answer, note });
+  }
+  mpDeclareWin() {
+    this.send({ type: 'MP_DECLARE_WIN' });
+  }
+  mpPlayAgain() {
+    this.send({ type: 'MP_PLAY_AGAIN' });
+  }
+  mpEndGame() {
+    this.send({ type: 'MP_END_GAME' });
+  }
+  mpLeave() {
+    this.send({ type: 'MP_LEAVE' });
+    this.mpPlayerId = null;
   }
 
   startChoosing() {
@@ -242,12 +270,9 @@ class OnlineGameService {
     });
   }
 
-  sendVoiceSignal(signal: any, targetPlayerId?: string) {
-    this.send({
-      type: 'VOICE_SIGNAL',
-      signal,
-      targetPlayerId,
-    });
+  /** Voice signaling (never audio). In 3/4-player rooms it is addressed to one player. */
+  sendVoiceSignal(signal: any, toId?: string) {
+    this.send({ type: 'VOICE_SIGNAL', to: toId, signal });
   }
 
   sendVoiceStatus(isMuted: boolean, isSpeaking: boolean) {
@@ -310,8 +335,7 @@ class OnlineGameService {
     }
     this.roomCode = null;
     this.userRole = null;
-    this.myPlayerId = null;
-    unifiedVoiceEngine.destroy();
+    this.mpPlayerId = null;
   }
 }
 

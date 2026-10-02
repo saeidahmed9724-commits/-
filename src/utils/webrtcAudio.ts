@@ -1,39 +1,52 @@
-// Voice Engine — WebRTC peer-to-peer live voice chat (Online rooms only).
+// Voice Engine — WebRTC peer-to-peer live voice chat for every ONLINE room (2, 3 or 4 players).
 //
-// Completely separate from the Game Engine: nothing about turns, questions, answers, cards,
-// scores or rounds ever touches the microphone. The mic keeps the last state the player chose
-// until the player changes it, or the room ends.
+// One engine, one infrastructure: a full mesh with ONE RTCPeerConnection per pair of players.
+// (2 players = 1 connection, 3 = 3, 4 = 6.) It is completely separate from the Game Engine:
+// nothing about turns, questions, answers, cards, scores or rounds ever touches the microphone.
+// The mic keeps the last state the player chose until the player changes it, or the room ends.
+// The same-device mode never uses this engine at all.
 //
-// Model: the voice connection and the microphone are independent.
-//   join():            connects the audio channel when the player enters the room. The player can
-//                      HEAR others immediately; their own mic stays OFF.
-//   startMic()/stopMic(): opens/closes only the player's own mic. Uses replaceTrack() on the
-//                      existing RTCPeerConnection — no new connection, no renegotiation.
-//   stop():            room ended / player left: stop tracks, close the connection, free everything.
+//   join(selfId) + setPeers(ids): enter the room's voice channel. Everyone can HEAR everyone
+//                      immediately; the player's own mic stays OFF until they open it.
+//   startMic()/stopMic(): open/close only the player's own mic. Uses replaceTrack() on the
+//                      EXISTING connections — no new connection, no renegotiation.
+//   stop():            room ended / player left: stop tracks, close every connection, free all.
 //
-// Signaling (via the game server, which never carries audio):
-//   host: createOffer -> setLocalDescription -> send offer
-//   guest: setRemoteDescription -> createAnswer -> setLocalDescription -> send answer
-//   host: setRemoteDescription        (+ ICE candidates both ways)
-//   Offers/answers/candidates carry a session id (sid) so stale messages from a dead
-//   connection are ignored, and an ICE-restart offer reuses the guest's live connection.
+// Signaling goes through the game server, which never carries audio. Per pair, the player with
+// the smaller id is the offerer (deterministic, so there is never offer "glare"):
+//   offerer: createOffer -> setLocalDescription -> send offer
+//   answerer: setRemoteDescription -> createAnswer -> setLocalDescription -> send answer
+//   offerer: setRemoteDescription        (+ ICE candidates both ways)
+// Messages carry a per-connection session id (sid) so stale messages are ignored, and an
+// ICE-restart offer reuses the answerer's live connection.
 //
-// Recovery: connect timeout -> retry; 'disconnected'/'failed' -> ICE restart; repeated failure ->
-//   full rebuild; after MAX_ATTEMPTS the state becomes 'error' and the UI offers a manual retry.
+// Recovery (per pair): connect timeout -> retry; 'disconnected'/'failed' -> ICE restart; repeated
+// failure -> full rebuild; after MAX_ATTEMPTS that pair is 'error' and the UI offers a retry.
 //
 // ICE servers (STUN + TURN) come from the backend (/api/ice-servers) so TURN secrets never ship
 // in the frontend bundle. Add ?relay=1 to the page URL to force TURN-only (to test the relay).
 
 import { useSyncExternalStore } from 'react';
 
-export type VoiceState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error';
+export type VoiceState = 'disconnected' | 'waiting' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 export type MicResult = 'ok' | 'denied' | 'unsupported' | 'error';
 
+export interface PeerVoice {
+  state: VoiceState;
+  /** The other player's mic is open (they told us over signaling). */
+  mic: boolean;
+  /** The other player is actually talking right now (measured on the received audio). */
+  speaking: boolean;
+}
+
 export interface VoiceSnapshot {
+  /** Overall status: 'waiting' = nobody else is in the voice channel yet. */
   state: VoiceState;
   micOn: boolean;
   localSpeaking: boolean;
   remoteSpeaking: boolean;
+  peers: Record<string, PeerVoice>;
+  peerCount: number;
 }
 
 const CONNECT_TIMEOUT_MS = 15000;
@@ -57,48 +70,63 @@ interface LevelWatcher {
   lastLoud: number;
 }
 
-export class WebRTCAudioManager {
-  private pc: RTCPeerConnection | null = null;
-  private sender: RTCRtpSender | null = null;
-  private localStream: MediaStream | null = null;
-  private remoteAudio: HTMLAudioElement | null = null;
-  private onSignalCallback?: (signal: any) => void;
+/** Everything about the connection with ONE other player. */
+class PeerLink {
+  pc: RTCPeerConnection | null = null;
+  sender: RTCRtpSender | null = null;
+  sid: string | null = null;
+  pending: RTCIceCandidateInit[] = [];
+  state: VoiceState = 'waiting';
+  attempts = 0;
+  everConnected = false;
+  peerReady = false;
+  lastOfferAt = 0;
+  connectTimer: ReturnType<typeof setTimeout> | null = null;
+  graceTimer: ReturnType<typeof setTimeout> | null = null;
+  audioEl: HTMLAudioElement | null = null;
+  watch: LevelWatcher | null = null;
+  remoteMic = false;
+  speaking = false;
+  chain: Promise<void> = Promise.resolve();
+  constructor(public id: string, public initiator: boolean) {}
+}
 
+export class VoiceEngine {
+  private selfId: string | null = null;
   private joined = false;
-  private isInitiator = false;
-  private peerReady = false;
-  private sid: string | null = null;
-  private pendingCandidates: RTCIceCandidateInit[] = [];
-  private lastOfferAt = 0;
+  private joinPromise: Promise<void> | null = null;
+  private links = new Map<string, PeerLink>();
+  private desiredPeers: string[] = [];
+  private earlyReady = new Set<string>();
+  private onSignalCallback?: (toId: string, signal: any) => void;
+
+  private localStream: MediaStream | null = null;
+  private micPending = false;
 
   private iceServers: RTCIceServer[] = FALLBACK_ICE;
   private iceFetchedAt = 0;
-  private joinPromise: Promise<void> | null = null;
-  private signalChain: Promise<void> = Promise.resolve();
-  private micPending = false;
-
-  private attempts = 0;
-  private everConnected = false;
-  private connectTimer: ReturnType<typeof setTimeout> | null = null;
-  private graceTimer: ReturnType<typeof setTimeout> | null = null;
 
   private audioCtx: AudioContext | null = null;
   private localWatch: LevelWatcher | null = null;
-  private remoteWatch: LevelWatcher | null = null;
+  private localSpeaking = false;
   private levelTimer: ReturnType<typeof setInterval> | null = null;
   private gestureArmed = false;
 
   private listeners = new Set<() => void>();
+  private snapshotKey = '';
   private snapshot: VoiceSnapshot = {
     state: 'disconnected',
     micOn: false,
     localSpeaking: false,
     remoteSpeaking: false,
+    peers: {},
+    peerCount: 0,
   };
 
   // ---------- public API ----------
 
-  setSignalCallback(cb: (signal: any) => void) {
+  /** Where outgoing signaling messages go: (toPlayerId, signal). */
+  setSignalCallback(cb: (toId: string, signal: any) => void) {
     this.onSignalCallback = cb;
   }
 
@@ -110,43 +138,35 @@ export class WebRTCAudioManager {
   };
 
   getSnapshot = (): VoiceSnapshot => this.snapshot;
+  getState = (): VoiceState => this.snapshot.state;
+  isActive = (): boolean => this.joined;
+  isMicOn = (): boolean => this.localStream !== null;
+  getSelfId = (): string | null => this.selfId;
 
-  isActive(): boolean {
-    return this.joined;
-  }
-
-  isMicOn(): boolean {
-    return this.localStream !== null;
-  }
-
-  getState(): VoiceState {
-    return this.snapshot.state;
-  }
-
-  /** Join the room's voice channel (no mic needed). Safe to call more than once. */
-  join(isInitiator: boolean): Promise<void> {
-    if (this.joined) return this.joinPromise ?? Promise.resolve();
+  /** Join the room's voice channel as `selfId` (no mic needed). Safe to call more than once. */
+  join(selfId: string): Promise<void> {
+    if (this.joined && this.selfId === selfId) return this.joinPromise ?? Promise.resolve();
+    if (this.joined) this.stop(); // different identity (e.g. new room): start clean
     this.joined = true;
-    this.isInitiator = isInitiator;
-    this.attempts = 0;
-    this.everConnected = false;
-    this.update({ state: 'connecting' });
+    this.selfId = selfId;
     this.armGestureUnlock();
+    this.publish();
     this.joinPromise = (async () => {
       try {
         await this.ensureIce();
         if (!this.joined) return;
-        this.ensureRemoteAudio();
-        this.buildPeer();
-        this.sendSignal({ type: 'ready' });
-        if (this.isInitiator && this.peerReady) await this.makeOffer(false);
-        this.armConnectTimer();
+        this.syncLinks();
       } catch (err) {
         console.warn('Voice join error:', err);
-        this.update({ state: 'error' });
       }
     })();
     return this.joinPromise;
+  }
+
+  /** The other players currently in the room (add/remove connections as players come and go). */
+  setPeers(ids: string[]) {
+    this.desiredPeers = ids.filter((id) => id !== this.selfId);
+    if (this.joined && !this.joinPromiseStillPending()) this.syncLinks();
   }
 
   /** Open this player's own mic (independent of turns, questions or rounds). */
@@ -161,20 +181,21 @@ export class WebRTCAudioManager {
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       if (!this.joined) {
-        // Room ended while the permission prompt was open.
-        stream.getTracks().forEach((t) => t.stop());
+        stream.getTracks().forEach((t) => t.stop()); // room ended while the prompt was open
         return 'error';
       }
       this.localStream = stream;
       const track = stream.getAudioTracks()[0];
-      // If the OS / browser kills the mic, reflect it instead of showing a false "ON".
       track.onended = () => {
-        if (this.localStream === stream) this.stopMic();
+        if (this.localStream === stream) this.stopMic(); // OS/browser killed the mic: don't lie
       };
-      await this.sender?.replaceTrack(track);
+      await Promise.all(
+        [...this.links.values()].map((l) => l.sender?.replaceTrack(track).catch((e) => console.warn('replaceTrack failed:', e)))
+      );
       this.watchLocal(stream);
       this.resumeAudio();
-      this.update({ micOn: true });
+      this.broadcast({ type: 'mic', on: true });
+      this.publish();
       return 'ok';
     } catch (err: any) {
       console.warn('Microphone start error:', err);
@@ -187,8 +208,9 @@ export class WebRTCAudioManager {
     }
   }
 
-  /** Close only this player's mic. The connection stays alive so they keep hearing others. */
+  /** Close only this player's mic. Connections stay alive: they keep hearing everyone. */
   stopMic() {
+    const had = this.localStream !== null;
     if (this.localStream) {
       this.localStream.getTracks().forEach((t) => {
         t.onended = null;
@@ -196,34 +218,36 @@ export class WebRTCAudioManager {
       });
       this.localStream = null;
     }
-    this.sender?.replaceTrack(null).catch(() => {});
-    this.unwatch('local');
-    this.update({ micOn: false, localSpeaking: false });
+    this.links.forEach((l) => l.sender?.replaceTrack(null).catch(() => {}));
+    this.unwatchLocal();
+    this.localSpeaking = false;
+    if (had) this.broadcast({ type: 'mic', on: false });
+    this.publish();
   }
 
-  /** Manual retry after the 'error' state. */
+  /** Manual retry for every connection that is not working. */
   retry() {
     if (!this.joined) return;
-    this.attempts = 0;
-    this.update({ state: this.everConnected ? 'reconnecting' : 'connecting' });
-    if (this.isInitiator) {
-      this.recover(true);
-    } else {
-      this.buildPeer();
-      this.sendSignal({ type: 'ready' });
-      this.armConnectTimer();
-    }
+    this.links.forEach((l) => {
+      if (l.state === 'connected') return;
+      l.attempts = 0;
+      if (l.initiator) {
+        this.recover(l, true);
+      } else {
+        this.buildPeer(l);
+        this.send(l, { type: 'ready' });
+      }
+    });
   }
 
-  /** Room ended / player left: free the mic, the connection and every listener. */
+  /** Room ended / player left: free the mic, every connection and every listener. */
   stop() {
-    const wasJoined = this.joined;
-    if (wasJoined) this.sendSignal({ type: 'bye' });
+    if (this.joined) this.broadcast({ type: 'bye' });
     this.joined = false;
     this.joinPromise = null;
-    this.peerReady = false;
-    this.sid = null;
-    this.clearTimers();
+    this.selfId = null;
+    this.desiredPeers = [];
+    this.earlyReady.clear();
     if (this.localStream) {
       this.localStream.getTracks().forEach((t) => {
         t.onended = null;
@@ -231,9 +255,10 @@ export class WebRTCAudioManager {
       });
       this.localStream = null;
     }
-    this.closePeer();
-    this.unwatch('local');
-    this.unwatch('remote');
+    [...this.links.values()].forEach((l) => this.destroyLink(l));
+    this.links.clear();
+    this.unwatchLocal();
+    this.localSpeaking = false;
     if (this.levelTimer) {
       clearInterval(this.levelTimer);
       this.levelTimer = null;
@@ -242,49 +267,94 @@ export class WebRTCAudioManager {
       this.audioCtx.close().catch(() => {});
       this.audioCtx = null;
     }
-    if (this.remoteAudio) {
-      this.remoteAudio.srcObject = null;
-      this.remoteAudio.remove();
-      this.remoteAudio = null;
-    }
-    this.update({ state: 'disconnected', micOn: false, localSpeaking: false, remoteSpeaking: false });
+    this.publish();
   }
 
-  /** Incoming signaling message from the other player (relayed by the server). */
-  handleSignal(signal: any): Promise<void> {
-    // Serialize: offer/answer/candidate handling is async and must not interleave.
-    this.signalChain = this.signalChain.then(() => this.processSignal(signal)).catch((err) => {
-      console.warn('Voice signal error:', err);
+  /** Incoming signaling message from player `fromId` (relayed by the server). */
+  handleSignal(fromId: string, signal: any): Promise<void> {
+    const link = this.links.get(fromId);
+    if (!link) {
+      // Their 'ready' can arrive before we know about them: remember it.
+      if (signal?.type === 'ready') this.earlyReady.add(fromId);
+      if (signal?.type === 'bye') this.earlyReady.delete(fromId);
+      return Promise.resolve();
+    }
+    // Serialize per pair: offer/answer/candidate handling is async and must not interleave.
+    link.chain = link.chain
+      .then(() => this.processSignal(link, signal))
+      .catch((err) => console.warn('Voice signal error:', err));
+    return link.chain;
+  }
+
+  // ---------- links (one per other player) ----------
+
+  private joinPromiseStillPending() {
+    return this.iceFetchedAt === 0;
+  }
+
+  private syncLinks() {
+    if (!this.joined || !this.selfId) return;
+    const want = new Set(this.desiredPeers);
+    [...this.links.keys()].forEach((id) => {
+      if (!want.has(id)) {
+        const l = this.links.get(id)!;
+        this.destroyLink(l);
+        this.links.delete(id);
+      }
     });
-    return this.signalChain;
+    want.forEach((id) => {
+      if (this.links.has(id)) return;
+      const link = new PeerLink(id, this.selfId! < id);
+      link.peerReady = this.earlyReady.has(id);
+      this.links.set(id, link);
+      this.buildPeer(link);
+      this.send(link, { type: 'ready' });
+      if (link.peerReady) {
+        this.setLinkState(link, 'connecting');
+        if (link.initiator) this.beginOffer(link).catch((e) => console.warn('Offer failed:', e));
+      }
+    });
+    this.publish();
   }
 
-  // ---------- internals ----------
-
-  private update(patch: Partial<VoiceSnapshot>) {
-    const next = { ...this.snapshot, ...patch };
-    if (
-      next.state === this.snapshot.state &&
-      next.micOn === this.snapshot.micOn &&
-      next.localSpeaking === this.snapshot.localSpeaking &&
-      next.remoteSpeaking === this.snapshot.remoteSpeaking
-    ) {
-      return;
+  private destroyLink(l: PeerLink) {
+    this.clearTimers(l);
+    this.closePeer(l);
+    if (l.watch) {
+      try {
+        l.watch.source.disconnect();
+      } catch {}
+      l.watch = null;
     }
-    this.snapshot = next;
-    this.listeners.forEach((l) => l());
+    if (l.audioEl) {
+      l.audioEl.srcObject = null;
+      l.audioEl.remove();
+      l.audioEl = null;
+    }
   }
 
-  private sendSignal(signal: any) {
+  private send(l: PeerLink, signal: any) {
     try {
-      this.onSignalCallback?.(signal);
+      this.onSignalCallback?.(l.id, signal);
     } catch (err) {
       console.warn('Voice signal send failed:', err);
     }
   }
 
+  private broadcast(signal: any) {
+    this.links.forEach((l) => this.send(l, signal));
+  }
+
+  private setLinkState(l: PeerLink, state: VoiceState) {
+    if (l.state === state) return;
+    l.state = state;
+    this.publish();
+  }
+
+  // ---------- ICE servers ----------
+
   private async ensureIce() {
-    if (Date.now() - this.iceFetchedAt < ICE_CACHE_MS) return;
+    if (Date.now() - this.iceFetchedAt < ICE_CACHE_MS && this.iceFetchedAt !== 0) return;
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 4000);
@@ -305,18 +375,21 @@ export class WebRTCAudioManager {
     this.iceFetchedAt = Date.now() - ICE_CACHE_MS + 30000; // retry the fetch in 30s
   }
 
-  private ensureRemoteAudio() {
-    if (this.remoteAudio) return;
+  // ---------- audio output ----------
+
+  private ensureAudioEl(l: PeerLink) {
+    if (l.audioEl) return l.audioEl;
     const el = document.createElement('audio');
     el.autoplay = true;
     (el as any).playsInline = true;
     el.style.display = 'none';
     document.body.appendChild(el);
-    this.remoteAudio = el;
+    l.audioEl = el;
+    return el;
   }
 
-  private playRemote() {
-    this.remoteAudio?.play().catch(() => this.armGestureUnlock());
+  private playRemote(l: PeerLink) {
+    l.audioEl?.play().catch(() => this.armGestureUnlock());
   }
 
   /** Browsers block autoplay / AudioContext until a user gesture: unlock on the next tap. */
@@ -327,7 +400,7 @@ export class WebRTCAudioManager {
       this.gestureArmed = false;
       document.removeEventListener('click', unlock);
       document.removeEventListener('touchstart', unlock);
-      this.remoteAudio?.play().catch(() => {});
+      this.links.forEach((l) => l.audioEl?.play().catch(() => {}));
       this.resumeAudio();
     };
     document.addEventListener('click', unlock);
@@ -338,121 +411,122 @@ export class WebRTCAudioManager {
     if (this.audioCtx && this.audioCtx.state === 'suspended') this.audioCtx.resume().catch(() => {});
   }
 
-  private closePeer() {
-    if (this.pc) {
-      this.pc.onicecandidate = null;
-      this.pc.ontrack = null;
-      this.pc.onconnectionstatechange = null;
-      this.pc.oniceconnectionstatechange = null;
-      this.pc.close();
-      this.pc = null;
+  // ---------- RTCPeerConnection per pair ----------
+
+  private closePeer(l: PeerLink) {
+    if (l.pc) {
+      l.pc.onicecandidate = null;
+      l.pc.ontrack = null;
+      l.pc.onconnectionstatechange = null;
+      l.pc.oniceconnectionstatechange = null;
+      l.pc.close();
+      l.pc = null;
     }
-    this.sender = null;
-    this.pendingCandidates = [];
+    l.sender = null;
+    l.pending = [];
   }
 
-  /** Create a fresh RTCPeerConnection (the only place one is created). */
-  private buildPeer() {
-    this.closePeer();
+  /** Create a fresh RTCPeerConnection for this pair (the only place one is created). */
+  private buildPeer(l: PeerLink) {
+    this.closePeer(l);
     const forceRelay = typeof location !== 'undefined' && new URLSearchParams(location.search).get('relay') === '1';
     const pc = new RTCPeerConnection({
       iceServers: this.iceServers,
       iceTransportPolicy: forceRelay ? 'relay' : 'all',
     });
-    this.pc = pc;
+    l.pc = pc;
 
-    // One permanent two-way audio channel; the mic is attached/detached with replaceTrack.
-    // Only the OFFERER creates the transceiver. The answerer must use the transceiver that comes
-    // from the offer (see adoptOfferedTransceiver) — a second, locally-created one would never be
+    // Only the OFFERER creates the transceiver. The answerer must use the one that comes from
+    // the offer (adoptOfferedTransceiver): a second, locally-created one would never be
     // negotiated and the answerer's voice would silently never be sent.
-    if (this.isInitiator) {
-      const transceiver = pc.addTransceiver('audio', { direction: 'sendrecv' });
-      this.sender = transceiver.sender;
+    if (l.initiator) {
+      const t = pc.addTransceiver('audio', { direction: 'sendrecv' });
+      l.sender = t.sender;
       const track = this.localStream?.getAudioTracks()[0];
-      if (track) this.sender.replaceTrack(track).catch((err) => console.warn('replaceTrack failed:', err));
+      if (track) l.sender.replaceTrack(track).catch((e) => console.warn('replaceTrack failed:', e));
     }
 
     pc.ontrack = (event) => {
-      this.ensureRemoteAudio();
+      const el = this.ensureAudioEl(l);
       const stream = event.streams[0] ?? new MediaStream([event.track]);
-      if (this.remoteAudio) {
-        this.remoteAudio.srcObject = stream;
-        this.playRemote();
-      }
-      this.watchRemote(stream);
+      el.srcObject = stream;
+      this.playRemote(l);
+      this.watchRemote(l, stream);
     };
 
     pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        this.sendSignal({ type: 'candidate', sid: this.sid, candidate: event.candidate.toJSON() });
-      }
+      if (event.candidate) this.send(l, { type: 'candidate', sid: l.sid, candidate: event.candidate.toJSON() });
     };
 
     // An ICE restart on a live connection does not fire connectionState 'connected' again,
     // so also watch the ICE state to leave 'reconnecting'.
     pc.oniceconnectionstatechange = () => {
-      if (this.pc !== pc || !this.joined) return;
-      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
-        this.markConnectedIfLive(pc);
-      }
+      if (l.pc !== pc || !this.joined) return;
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') this.markConnectedIfLive(l, pc);
     };
 
     pc.onconnectionstatechange = () => {
-      if (this.pc !== pc || !this.joined) return;
+      if (l.pc !== pc || !this.joined) return;
       const s = pc.connectionState;
       if (s === 'connected') {
-        this.clearTimers();
-        this.attempts = 0;
-        this.everConnected = true;
-        this.update({ state: 'connected' });
+        this.markConnectedIfLive(l, pc) || this.finishConnected(l);
       } else if (s === 'disconnected') {
-        this.update({ state: 'reconnecting' });
-        if (this.graceTimer) clearTimeout(this.graceTimer);
+        this.setLinkState(l, 'reconnecting');
+        if (l.graceTimer) clearTimeout(l.graceTimer);
         // Brief network blips often heal by themselves; recover if they do not.
-        this.graceTimer = setTimeout(() => {
-          if (this.pc === pc && !this.markConnectedIfLive(pc)) this.recover(false);
+        l.graceTimer = setTimeout(() => {
+          if (l.pc === pc && !this.markConnectedIfLive(l, pc)) this.recover(l, false);
         }, DISCONNECT_GRACE_MS);
       } else if (s === 'failed') {
-        this.recover(false);
+        this.recover(l, false);
       }
     };
   }
 
-  private markConnectedIfLive(pc: RTCPeerConnection | null): boolean {
-    if (!pc || this.pc !== pc || !this.joined) return false;
+  private finishConnected(l: PeerLink) {
+    this.clearTimers(l);
+    l.attempts = 0;
+    l.everConnected = true;
+    this.setLinkState(l, 'connected');
+    // New/restored connection: let them know whether our mic is open.
+    this.send(l, { type: 'mic', on: this.localStream !== null });
+  }
+
+  private markConnectedIfLive(l: PeerLink, pc: RTCPeerConnection | null): boolean {
+    if (!pc || l.pc !== pc || !this.joined) return false;
     const ice = pc.iceConnectionState;
     if (pc.connectionState === 'connected' && (ice === 'connected' || ice === 'completed')) {
-      this.clearTimers();
-      this.attempts = 0;
-      this.everConnected = true;
-      this.update({ state: 'connected' });
+      if (l.state !== 'connected') this.finishConnected(l);
       return true;
     }
     return false;
   }
 
-  /** Host only: new connection + new session id. */
-  private buildPeerAsHost() {
-    this.buildPeer();
-    this.sid = uid();
+  /** Offerer only: new connection + new session id, then offer. */
+  private async beginOffer(l: PeerLink) {
+    await this.ensureIce();
+    this.buildPeer(l);
+    l.sid = uid();
+    await this.makeOffer(l, false);
+    this.armConnectTimer(l);
   }
 
-  private async makeOffer(iceRestart: boolean) {
-    const pc = this.pc;
+  private async makeOffer(l: PeerLink, iceRestart: boolean) {
+    const pc = l.pc;
     if (!pc) return;
-    if (!this.sid) this.sid = uid();
-    this.lastOfferAt = Date.now();
+    if (!l.sid) l.sid = uid();
+    l.lastOfferAt = Date.now();
     const offer = await pc.createOffer({ iceRestart });
     await pc.setLocalDescription(offer);
-    this.sendSignal({ type: 'offer', sid: this.sid, offer: pc.localDescription ?? offer });
+    this.send(l, { type: 'offer', sid: l.sid, offer: pc.localDescription ?? offer });
   }
 
   /** Answerer: make the offered audio m-line two-way and use its sender for our mic. */
-  private async adoptOfferedTransceiver(pc: RTCPeerConnection) {
+  private async adoptOfferedTransceiver(l: PeerLink, pc: RTCPeerConnection) {
     const t = pc.getTransceivers().find((x) => x.receiver.track.kind === 'audio');
     if (!t) return;
     t.direction = 'sendrecv';
-    this.sender = t.sender;
+    l.sender = t.sender;
     const track = this.localStream?.getAudioTracks()[0];
     if (track) {
       try {
@@ -463,11 +537,11 @@ export class WebRTCAudioManager {
     }
   }
 
-  private async flushCandidates() {
-    const pc = this.pc;
+  private async flushCandidates(l: PeerLink) {
+    const pc = l.pc;
     if (!pc || !pc.remoteDescription) return;
-    const queued = this.pendingCandidates;
-    this.pendingCandidates = [];
+    const queued = l.pending;
+    l.pending = [];
     for (const c of queued) {
       try {
         await pc.addIceCandidate(c);
@@ -477,131 +551,141 @@ export class WebRTCAudioManager {
     }
   }
 
-  private clearTimers() {
-    if (this.connectTimer) clearTimeout(this.connectTimer);
-    if (this.graceTimer) clearTimeout(this.graceTimer);
-    this.connectTimer = null;
-    this.graceTimer = null;
+  private clearTimers(l: PeerLink) {
+    if (l.connectTimer) clearTimeout(l.connectTimer);
+    if (l.graceTimer) clearTimeout(l.graceTimer);
+    l.connectTimer = null;
+    l.graceTimer = null;
   }
 
-  private armConnectTimer() {
-    if (this.connectTimer) clearTimeout(this.connectTimer);
-    this.connectTimer = setTimeout(() => {
-      if (!this.joined || this.snapshot.state === 'connected') return;
-      if (this.markConnectedIfLive(this.pc)) return;
-      this.recover(this.attempts >= 1);
+  private armConnectTimer(l: PeerLink) {
+    if (l.connectTimer) clearTimeout(l.connectTimer);
+    l.connectTimer = setTimeout(() => {
+      if (!this.joined || l.state === 'connected' || !l.peerReady) return;
+      if (this.markConnectedIfLive(l, l.pc)) return;
+      this.recover(l, l.attempts >= 1);
     }, CONNECT_TIMEOUT_MS);
   }
 
   /** Timeout / disconnected / failed -> retry. 'hard' rebuilds the connection from scratch. */
-  private recover(hard: boolean) {
+  private recover(l: PeerLink, hard: boolean) {
     if (!this.joined) return;
-    this.attempts += 1;
-    if (this.attempts > MAX_ATTEMPTS) {
-      this.clearTimers();
-      this.update({ state: 'error' });
+    l.attempts += 1;
+    if (l.attempts > MAX_ATTEMPTS) {
+      this.clearTimers(l);
+      this.setLinkState(l, 'error');
       return;
     }
-    this.update({ state: this.everConnected ? 'reconnecting' : 'connecting' });
-    if (this.isInitiator) {
-      if (hard || !this.pc) {
-        this.buildPeerAsHost();
-        this.makeOffer(false).catch((err) => console.warn('Offer failed:', err));
+    this.setLinkState(l, l.everConnected ? 'reconnecting' : 'connecting');
+    if (l.initiator) {
+      if (hard || !l.pc) {
+        this.buildPeer(l);
+        l.sid = uid();
+        this.makeOffer(l, false).catch((e) => console.warn('Offer failed:', e));
       } else {
-        this.makeOffer(true).catch((err) => console.warn('ICE restart failed:', err));
+        this.makeOffer(l, true).catch((e) => console.warn('ICE restart failed:', e));
       }
     } else {
-      // Only the host creates offers: ask it to re-offer.
-      this.sendSignal({ type: 'retry' });
+      this.send(l, { type: 'retry' }); // only the offerer creates offers: ask it to re-offer
     }
-    this.armConnectTimer();
+    this.armConnectTimer(l);
   }
 
-  private async processSignal(signal: any) {
+  private async processSignal(l: PeerLink, signal: any) {
     if (this.joinPromise) await this.joinPromise;
+    if (!this.joined || this.links.get(l.id) !== l) return;
     switch (signal?.type) {
       case 'ready':
-        this.peerReady = true;
-        if (!this.joined) return;
-        if (this.isInitiator) {
-          // The guest (re)joined. Ignore the duplicate 'ready' of the same handshake.
-          if (Date.now() - this.lastOfferAt < 1500 && this.snapshot.state !== 'connected') return;
-          await this.ensureIce();
-          this.buildPeerAsHost();
-          this.update({ state: this.everConnected ? 'reconnecting' : 'connecting' });
-          await this.makeOffer(false);
-          this.armConnectTimer();
+        l.peerReady = true;
+        if (l.state === 'waiting') this.setLinkState(l, 'connecting');
+        if (l.initiator) {
+          // Ignore the duplicate 'ready' of the same handshake.
+          if (Date.now() - l.lastOfferAt < 1500 && l.state !== 'connected') return;
+          if (l.everConnected) this.setLinkState(l, 'reconnecting');
+          await this.beginOffer(l);
         } else {
-          // The host (re)joined: tell it we are here so it can offer.
-          this.sendSignal({ type: 'ready' });
+          this.send(l, { type: 'ready' }); // tell the offerer we are here
         }
         break;
 
       case 'retry':
-        if (this.joined && this.isInitiator) this.recover(false);
+        if (l.initiator) this.recover(l, false);
+        break;
+
+      case 'mic':
+        l.remoteMic = Boolean(signal.on);
+        this.publish();
         break;
 
       case 'bye':
-        // The other player left. Wait cleanly for them to come back (no timers, no error).
-        this.peerReady = false;
-        this.clearTimers();
-        this.attempts = 0;
-        this.unwatch('remote');
-        if (this.remoteAudio) this.remoteAudio.srcObject = null;
-        if (this.joined) {
-          this.buildPeer();
-          this.sid = null;
-          this.update({ state: 'connecting', remoteSpeaking: false });
+        // They left: wait cleanly for them to come back (no timers, no error).
+        l.peerReady = false;
+        l.attempts = 0;
+        l.remoteMic = false;
+        l.speaking = false;
+        this.clearTimers(l);
+        if (l.watch) {
+          try {
+            l.watch.source.disconnect();
+          } catch {}
+          l.watch = null;
         }
+        if (l.audioEl) l.audioEl.srcObject = null;
+        this.buildPeer(l);
+        l.sid = null;
+        this.setLinkState(l, 'waiting');
+        this.publish();
         break;
 
       case 'offer': {
-        if (!this.joined || this.isInitiator) return;
+        if (l.initiator) return; // we are the offerer for this pair
+        l.peerReady = true;
         await this.ensureIce();
-        const sameSession = this.pc && this.sid === signal.sid && this.pc.connectionState !== 'closed';
-        if (!sameSession) {
-          // New session from the host -> new connection. Same session (ICE restart) -> keep it alive.
-          this.buildPeer();
-          this.sid = signal.sid;
+        const same = l.pc && l.sid === signal.sid && l.pc.connectionState !== 'closed';
+        if (!same) {
+          // New session -> new connection. Same session (ICE restart) -> keep it alive.
+          this.buildPeer(l);
+          l.sid = signal.sid;
         }
-        const pc = this.pc;
+        const pc = l.pc;
         if (!pc) return;
+        if (l.state === 'waiting') this.setLinkState(l, 'connecting');
         await pc.setRemoteDescription(signal.offer);
-        await this.adoptOfferedTransceiver(pc);
-        await this.flushCandidates();
+        await this.adoptOfferedTransceiver(l, pc);
+        await this.flushCandidates(l);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        this.sendSignal({ type: 'answer', sid: this.sid, answer: pc.localDescription ?? answer });
-        if (this.snapshot.state !== 'connected') this.armConnectTimer();
+        this.send(l, { type: 'answer', sid: l.sid, answer: pc.localDescription ?? answer });
+        if (l.state !== 'connected') this.armConnectTimer(l);
         break;
       }
 
       case 'answer':
-        if (!this.pc || !this.isInitiator) return;
-        if (signal.sid !== this.sid) return; // stale answer from a dead session
-        if (this.pc.signalingState !== 'have-local-offer') return;
-        await this.pc.setRemoteDescription(signal.answer);
-        await this.flushCandidates();
-        this.markConnectedIfLive(this.pc);
+        if (!l.pc || !l.initiator) return;
+        if (signal.sid !== l.sid) return; // stale answer from a dead session
+        if (l.pc.signalingState !== 'have-local-offer') return;
+        await l.pc.setRemoteDescription(signal.answer);
+        await this.flushCandidates(l);
+        this.markConnectedIfLive(l, l.pc);
         break;
 
       case 'candidate':
-        if (!this.pc || !signal.candidate) return;
-        if (signal.sid && this.sid && signal.sid !== this.sid) return; // stale
-        if (this.pc.remoteDescription) {
+        if (!l.pc || !signal.candidate) return;
+        if (signal.sid && l.sid && signal.sid !== l.sid) return; // stale
+        if (l.pc.remoteDescription) {
           try {
-            await this.pc.addIceCandidate(signal.candidate);
+            await l.pc.addIceCandidate(signal.candidate);
           } catch (err) {
             console.warn('addIceCandidate failed:', err);
           }
         } else {
-          this.pendingCandidates.push(signal.candidate);
+          l.pending.push(signal.candidate);
         }
         break;
     }
   }
 
-  // ---------- "speaking" indicators (local mic + remote audio levels) ----------
+  // ---------- "speaking" indicators (local mic + each remote player) ----------
 
   private getCtx(): AudioContext | null {
     if (this.audioCtx) return this.audioCtx;
@@ -622,7 +706,7 @@ export class WebRTCAudioManager {
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
-      source.connect(analyser); // not connected to destination: analysis only, no echo
+      source.connect(analyser); // analysis only, not connected to destination: no echo
       return { source, analyser, buf: new Uint8Array(analyser.fftSize), lastLoud: 0 };
     } catch {
       return null;
@@ -630,26 +714,28 @@ export class WebRTCAudioManager {
   }
 
   private watchLocal(stream: MediaStream) {
-    this.unwatch('local');
+    this.unwatchLocal();
     this.localWatch = this.makeWatcher(stream);
     this.startLevelTimer();
   }
 
-  private watchRemote(stream: MediaStream) {
-    this.unwatch('remote');
-    this.remoteWatch = this.makeWatcher(stream);
-    this.startLevelTimer();
+  private unwatchLocal() {
+    if (this.localWatch) {
+      try {
+        this.localWatch.source.disconnect();
+      } catch {}
+      this.localWatch = null;
+    }
   }
 
-  private unwatch(which: 'local' | 'remote') {
-    const w = which === 'local' ? this.localWatch : this.remoteWatch;
-    if (w) {
+  private watchRemote(l: PeerLink, stream: MediaStream) {
+    if (l.watch) {
       try {
-        w.source.disconnect();
+        l.watch.source.disconnect();
       } catch {}
     }
-    if (which === 'local') this.localWatch = null;
-    else this.remoteWatch = null;
+    l.watch = this.makeWatcher(stream);
+    this.startLevelTimer();
   }
 
   private startLevelTimer() {
@@ -667,17 +753,60 @@ export class WebRTCAudioManager {
         if (Math.sqrt(sum / w.buf.length) > SPEAK_THRESHOLD) w.lastLoud = now;
         return now - w.lastLoud < SPEAK_HOLD_MS;
       };
-      this.update({
-        localSpeaking: this.snapshot.micOn && measure(this.localWatch),
-        remoteSpeaking: measure(this.remoteWatch),
+      this.localSpeaking = this.localStream !== null && measure(this.localWatch);
+      this.links.forEach((l) => {
+        l.speaking = measure(l.watch);
       });
+      this.publish();
     }, 120);
+  }
+
+  // ---------- snapshot for the UI ----------
+
+  private publish() {
+    const peers: Record<string, PeerVoice> = {};
+    let total = 0;
+    let connected = 0;
+    let errored = 0;
+    let reconnecting = false;
+    let anySpeaking = false;
+    this.links.forEach((l) => {
+      peers[l.id] = { state: l.state, mic: l.remoteMic, speaking: l.speaking };
+      if (l.speaking) anySpeaking = true;
+      if (l.state === 'waiting') return; // that player is not in the voice channel (yet)
+      total += 1;
+      if (l.state === 'connected') connected += 1;
+      else if (l.state === 'error') errored += 1;
+      else if (l.state === 'reconnecting') reconnecting = true;
+    });
+
+    let state: VoiceState;
+    if (!this.joined) state = 'disconnected';
+    else if (total === 0) state = 'waiting';
+    else if (connected === total) state = 'connected';
+    else if (errored > 0 && errored === total - connected) state = 'error';
+    else if (reconnecting) state = 'reconnecting';
+    else state = 'connecting';
+
+    const next: VoiceSnapshot = {
+      state,
+      micOn: this.localStream !== null,
+      localSpeaking: this.localSpeaking,
+      remoteSpeaking: anySpeaking,
+      peers,
+      peerCount: this.links.size,
+    };
+    const key = JSON.stringify(next);
+    if (key === this.snapshotKey) return;
+    this.snapshotKey = key;
+    this.snapshot = next;
+    this.listeners.forEach((fn) => fn());
   }
 }
 
-export const liveVoiceManager = new WebRTCAudioManager();
+export const liveVoiceManager = new VoiceEngine();
 
-/** React hook: live voice state (connection, mic on/off, who is speaking). */
+/** React hook: live voice state (connections, mic on/off, who is speaking). */
 export function useVoiceChat(): VoiceSnapshot {
   return useSyncExternalStore(liveVoiceManager.subscribe, liveVoiceManager.getSnapshot);
 }

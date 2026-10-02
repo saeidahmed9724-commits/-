@@ -14,8 +14,7 @@ import {
   AnswerType,
   PendingQuestionData,
   PlayerCount,
-  MultiplayerPlayer,
-  MultiplayerSecretImage,
+  MpRoomState,
 } from './types/game';
 import { CATEGORIES } from './data/categories';
 import { sound } from './utils/audio';
@@ -36,9 +35,7 @@ import { RevealScreen } from './components/RevealScreen';
 import { GameOverScreen } from './components/GameOverScreen';
 import { RulesModal } from './components/RulesModal';
 import { PlayerCountModal, SelectedGameSetupMode } from './components/PlayerCountModal';
-import { MultiplayerSetupScreen } from './components/MultiplayerSetupScreen';
-import { MultiplayerChoosePictureScreen } from './components/MultiplayerChoosePictureScreen';
-import { MultiplayerArena } from './components/MultiplayerArena';
+import { OnlineMultiplayerGame } from './components/OnlineMultiplayerGame';
 
 export default function App() {
   const [lang, setLang] = useState<'ar' | 'en'>('ar');
@@ -58,9 +55,8 @@ export default function App() {
   // Player Count & Multiplayer Mode (3–4 Players)
   const [isPlayerCountModalOpen, setIsPlayerCountModalOpen] = useState<boolean>(false);
   const [playerCount, setPlayerCount] = useState<PlayerCount>(2);
-  const [pendingPlayerCountAction, setPendingPlayerCountAction] = useState<'OFFLINE' | 'ONLINE'>('OFFLINE');
-  const [multiplayerNames, setMultiplayerNames] = useState<string[]>([]);
-  const [multiplayerPlayers, setMultiplayerPlayers] = useState<MultiplayerPlayer[]>([]);
+  // 3 / 4 players online: the live room state pushed by the server (every player on their own device)
+  const [mpRoom, setMpRoom] = useState<MpRoomState | null>(null);
 
   // Online Specific State
   const [onlineRole, setOnlineRole] = useState<'host' | 'guest'>('host');
@@ -250,13 +246,21 @@ export default function App() {
       } else if (event.type === 'GUESS_REJECTED' || event.type === 'WRONG_GUESS') {
         sound.playWrongBuzzer();
         setPendingGuessRemote(null);
-      } else if (event.type === 'VOICE_SIGNAL' && (event as any).signal) {
-        liveVoiceManager.handleSignal((event as any).signal);
+      } else if (event.type === 'MP_STATE' && event.room) {
+        setMpRoom(event.room as unknown as MpRoomState);
+      } else if (event.type === 'MP_ROOM_CLOSED') {
+        liveVoiceManager.stop();
+        onlineService.disconnect();
+        setMpRoom(null);
+        setGamePhase('HOME');
+      } else if (event.type === 'VOICE_SIGNAL' && event.signal) {
+        // One voice engine for every online mode; `from` is the other player's id.
+        liveVoiceManager.handleSignal(String(event.from ?? event.fromRole), event.signal);
       }
     });
 
-    liveVoiceManager.setSignalCallback((signal) => {
-      onlineService.sendVoiceSignal(signal);
+    liveVoiceManager.setSignalCallback((toId, signal) => {
+      onlineService.sendVoiceSignal(signal, toId);
     });
 
     return () => {
@@ -273,11 +277,6 @@ export default function App() {
   }, [gamePhase]);
 
   // Home Screen Navigators
-  const handleOpenPlayerCountModal = (action: 'OFFLINE' | 'ONLINE') => {
-    setPendingPlayerCountAction(action);
-    setIsPlayerCountModalOpen(true);
-  };
-
   const handleSelectGameMode = (mode: SelectedGameSetupMode) => {
     setIsPlayerCountModalOpen(false);
 
@@ -296,75 +295,6 @@ export default function App() {
     }
   };
 
-  const handleSelectPlayerCount = (count: PlayerCount) => {
-    setPlayerCount(count);
-    setIsPlayerCountModalOpen(false);
-
-    if (count === 2) {
-      // Classic 2 Players head-to-head mode (100% intact)
-      if (pendingPlayerCountAction === 'ONLINE') {
-        handlePlayOnline();
-      } else {
-        handlePlayOffline();
-      }
-    } else {
-      // 3 or 4 Players Multiplayer mode
-      setGamePhase('MULTIPLAYER_SETUP');
-    }
-  };
-
-  const handleConfirmMultiplayerSetup = ({
-    playerNames,
-    category,
-  }: {
-    playerNames: string[];
-    category: CategoryDefinition;
-  }) => {
-    setCurrentCategory(category);
-    setMultiplayerNames(playerNames);
-    setGamePhase('MULTIPLAYER_CHOOSE_PICTURES');
-  };
-
-  const handleAllMultiplayerPicturesChosen = (secretImages: MultiplayerSecretImage[]) => {
-    const DEFAULT_COLORS = [
-      'from-emerald-500 to-emerald-700',
-      'from-purple-500 to-indigo-700',
-      'from-amber-500 to-orange-700',
-      'from-rose-500 to-pink-700',
-    ];
-
-    const initialMultiPlayers: MultiplayerPlayer[] = multiplayerNames.map((name, i) => {
-      const pId = `p-${i + 1}`;
-      const mySecret = secretImages.find((img) => img.ownerId === pId);
-
-      // targets = all other players' images
-      const targets = multiplayerNames
-        .map((otherName, otherIdx) => {
-          const otherId = `p-${otherIdx + 1}`;
-          if (otherId === pId) return null; // do NOT include self!
-
-          return {
-            ownerId: otherId,
-            ownerName: otherName,
-            isSolved: false,
-          };
-        })
-        .filter(Boolean) as any[];
-
-      return {
-        id: pId,
-        name,
-        score: 0,
-        avatarColor: DEFAULT_COLORS[i % DEFAULT_COLORS.length],
-        secretImage: mySecret,
-        targets,
-      };
-    });
-
-    setMultiplayerPlayers(initialMultiPlayers);
-    setGamePhase('MULTIPLAYER_PLAYING');
-  };
-
   const handlePlayOnline = (count: PlayerCount = 2) => {
     setGameMode('ROOM_CODE');
     setPlayerCount(count);
@@ -374,11 +304,13 @@ export default function App() {
   };
 
   const handlePlayOffline = () => {
+    setPlayerCount(2);
     setGameMode('PASS_AND_PLAY');
     setGamePhase('CREATE_GAME');
   };
 
   const handlePlayWithAI = () => {
+    setPlayerCount(2);
     setGameMode('VS_BOT');
     setPlayer2((p) => ({ ...p, name: lang === 'ar' ? 'الروبوت الذكي 🤖' : 'Smart Bot 🤖' }));
     setGamePhase('CREATE_GAME');
@@ -390,9 +322,14 @@ export default function App() {
     setRoomCode(code);
     setOnlineRole('guest');
     setPlayer2((p) => ({ ...p, name: playerName }));
-    await onlineService.joinRoom(code, playerName);
+    const joined = await onlineService.joinRoom(code, playerName); // throws if full / started / not found
     setIsJoinModalOpen(false);
-    setGamePhase('ROOM_LOBBY');
+    if (joined === 'MP_JOINED') {
+      setMpRoom(null);
+      setGamePhase('MP_ONLINE');
+    } else {
+      setGamePhase('ROOM_LOBBY');
+    }
   };
 
   // Confirm Create Game (both Online and Offline)
@@ -412,6 +349,17 @@ export default function App() {
     setP2Card(null);
 
     if (gameMode === 'ROOM_CODE') {
+      if (playerCount > 2) {
+        // 3 / 4 players online: a real shared room on the server, everyone on their own device.
+        try {
+          await onlineService.mpCreateRoom(roomCode, data.playerName, data.category, playerCount as 3 | 4);
+          setMpRoom(null);
+          setGamePhase('MP_ONLINE');
+        } catch {
+          window.alert(lang === 'ar' ? 'تعذر إنشاء الغرفة. تأكد من الاتصال وحاول مرة أخرى.' : 'Could not create the room. Check your connection and try again.');
+        }
+        return;
+      }
       setOnlineRole('host');
       await onlineService.createRoom(roomCode, data.playerName, data.category, data.targetScore);
       setGamePhase('ROOM_LOBBY');
@@ -575,8 +523,10 @@ export default function App() {
 
   const handleBackToHome = () => {
     if (gameMode === 'ROOM_CODE') {
+      onlineService.mpLeave();
       onlineService.disconnect();
     }
+    setMpRoom(null);
     setPlayer1((p) => ({ ...p, score: 0 }));
     setPlayer2((p) => ({ ...p, score: 0 }));
     setRoundNumber(1);
@@ -619,7 +569,7 @@ export default function App() {
             onRestartMatch={handleBackToHome}
             lang={lang}
             onToggleLang={() => setLang(lang === 'ar' ? 'en' : 'ar')}
-            showScore={isMatchActive && !gamePhase.startsWith('MULTIPLAYER')}
+            showScore={isMatchActive}
           />
         )}
 
@@ -661,6 +611,7 @@ export default function App() {
         {gamePhase === 'CREATE_GAME' && (
           <CreateGameScreen
             mode={gameMode}
+            playerCount={playerCount}
             onConfirmCreate={handleConfirmCreateGame}
             onBack={() => setGamePhase('HOME')}
             lang={lang}
@@ -784,35 +735,9 @@ export default function App() {
           />
         )}
 
-        {/* 9A. MULTIPLAYER SETUP SCREEN (3–4 PLAYERS) */}
-        {gamePhase === 'MULTIPLAYER_SETUP' && (
-          <MultiplayerSetupScreen
-            playerCount={playerCount}
-            onConfirmSetup={handleConfirmMultiplayerSetup}
-            onBack={() => setGamePhase('HOME')}
-            lang={lang}
-          />
-        )}
-
-        {/* 9B. MULTIPLAYER CHOOSE SECRET PICTURES */}
-        {gamePhase === 'MULTIPLAYER_CHOOSE_PICTURES' && (
-          <MultiplayerChoosePictureScreen
-            playerNames={multiplayerNames}
-            category={currentCategory}
-            onAllPicturesChosen={handleAllMultiplayerPicturesChosen}
-            lang={lang}
-          />
-        )}
-
-        {/* 9C. MULTIPLAYER ARENA (MAIN PLAYING TABLE) */}
-        {gamePhase === 'MULTIPLAYER_PLAYING' && multiplayerPlayers.length > 0 && (
-          <MultiplayerArena
-            initialPlayers={multiplayerPlayers}
-            category={currentCategory}
-            onPlayAgain={() => setGamePhase('MULTIPLAYER_CHOOSE_PICTURES')}
-            onBackToHome={() => setGamePhase('HOME')}
-            lang={lang}
-          />
+        {/* 9. ONLINE MULTIPLAYER (3–4 players, each on their own device) */}
+        {gamePhase === 'MP_ONLINE' && (
+          <OnlineMultiplayerGame room={mpRoom} onLeave={handleBackToHome} lang={lang} />
         )}
       </main>
 
@@ -821,7 +746,6 @@ export default function App() {
         isOpen={isPlayerCountModalOpen}
         onClose={() => setIsPlayerCountModalOpen(false)}
         onSelectMode={handleSelectGameMode}
-        onSelectCount={handleSelectPlayerCount}
         lang={lang}
       />
 

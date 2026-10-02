@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { normalizeText, isCorrectGuess } from './src/utils/normalize';
+import { mpHandle, mpClose, type MpCtx } from './mpRooms';
 
 dotenv.config();
 
@@ -457,10 +458,15 @@ app.get('/api/room/:code', (req, res) => {
 wss.on('connection', (ws) => {
   let userRoomCode: string | null = null;
   let userRole: 'host' | 'guest' | null = null;
+  // Seat in a 3/4-player online room (see mpRooms.ts). The 2-player system below is unchanged.
+  const mpCtx: MpCtx = { code: null, playerId: null };
 
   ws.on('message', (data) => {
     try {
       const msg = JSON.parse(data.toString());
+
+      // 3 / 4 players online (and the voice signaling between them)
+      if (mpHandle(ws, mpCtx, msg)) return;
 
       // 1. Host creates room
       if (msg.type === 'CREATE_ROOM') {
@@ -605,6 +611,7 @@ wss.on('connection', (ws) => {
         if (targetWs && targetWs.readyState === WebSocket.OPEN) {
           targetWs.send(JSON.stringify({
             type: 'VOICE_SIGNAL',
+            from: userRole,
             fromRole: userRole,
             signal: msg.signal,
           }));
@@ -725,6 +732,7 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
+    mpClose(mpCtx);
     if (userRoomCode) {
       const room = rooms.get(userRoomCode);
       if (room) {
@@ -732,7 +740,7 @@ wss.on('connection', (ws) => {
         // and waits for this player to come back (no stale connection, no endless spinner).
         const otherWs = userRole === 'host' ? room.guest?.ws : room.host.ws;
         if (otherWs && otherWs.readyState === WebSocket.OPEN) {
-          otherWs.send(JSON.stringify({ type: 'VOICE_SIGNAL', fromRole: userRole, signal: { type: 'bye' } }));
+          otherWs.send(JSON.stringify({ type: 'VOICE_SIGNAL', from: userRole, fromRole: userRole, signal: { type: 'bye' } }));
         }
         if (userRole === 'host') {
           // If host leaves, notify guest

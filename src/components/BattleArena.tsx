@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Player, PlayerChoice, QuestionRecord, CategoryDefinition, AnswerType, PendingQuestionData } from '../types/game';
 import { sound } from '../utils/audio';
 import { isCorrectGuess } from '../utils/normalize';
-import { liveVoiceManager, useVoiceChat } from '../utils/webrtcAudio';
+import { VoiceChatBar, useJoinVoice } from './VoiceChatBar';
 import {
   Send,
   Check,
@@ -140,41 +140,10 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
   const activePlayer = activePlayerId === player1.id ? player1 : player2;
   const opponentPlayer = activePlayerId === player1.id ? player2 : player1;
 
-  // Voice chat (Online rooms only). Fully independent from turns, questions, answers and rounds:
-  // the mic keeps the state the player chose until the player changes it or the room ends.
-  const voice = useVoiceChat();
-  const isLiveMicOn = isOnlineMatch && voice.micOn;
-  const voiceState = voice.state;
-  const [liveMicError, setLiveMicError] = useState<string | null>(null);
-
-  // Online match: join the room's voice channel as soon as the match screen exists, so every
-  // player hears the others even with their own mic closed. The connection survives between
-  // turns and rounds; App closes it when the player leaves the room / the match ends.
-  useEffect(() => {
-    if (isOnlineMatch && onlineRole) liveVoiceManager.join(onlineRole === 'host');
-  }, [isOnlineMatch, onlineRole]);
-
-  // Mic ON/OFF (Online only). Closing the mic never closes the voice connection.
-  const handleToggleLiveMic = async () => {
-    if (!isOnlineMatch) return;
-    sound.playCardFlip();
-    if (liveVoiceManager.isMicOn()) {
-      liveVoiceManager.stopMic();
-      setLiveMicError(null);
-      return;
-    }
-    await liveVoiceManager.join(onlineRole === 'host');
-    const result = await liveVoiceManager.startMic();
-    if (result === 'ok') {
-      setLiveMicError(null);
-    } else if (result === 'denied') {
-      setLiveMicError(lang === 'ar' ? 'تم رفض إذن المايك — فعّله من إعدادات المتصفح ثم حاول تاني' : 'Microphone permission denied — enable it in browser settings and try again');
-    } else if (result === 'unsupported') {
-      setLiveMicError(lang === 'ar' ? 'مفيش مايك متاح على الجهاز (أو الموقع محتاج HTTPS)' : 'No microphone available (or the site needs HTTPS)');
-    } else {
-      setLiveMicError(lang === 'ar' ? 'تعذر تشغيل المايك' : 'Could not start the microphone');
-    }
-  };
+  // Voice chat (Online rooms only): the same engine as 3/4-player rooms, separate from the game.
+  const myVoiceId = onlineRole === 'host' ? 'host' : 'guest';
+  const otherVoiceId = onlineRole === 'host' ? 'guest' : 'host';
+  useJoinVoice(isOnlineMatch && onlineRole ? myVoiceId : null, [otherVoiceId]);
 
   // Is it my turn to ask right now? (Only when no question is pending!)
   const isMyTurnToAsk = isOnlineMatch
@@ -399,86 +368,16 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
       </div>
 
       {/* 1B. ONLINE VOICE CHAT BAR — the only microphone in the game. Independent from turns. */}
-      {isOnlineMatch && (
-        <div className="p-3 bg-gradient-to-r from-[#0F172A] via-[#1E293B] to-[#0F172A] border-2 border-slate-700/90 rounded-2xl shadow-md">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="relative flex items-center justify-center shrink-0">
-                {(voice.localSpeaking || voice.remoteSpeaking) && (
-                  <span className="absolute w-5 h-5 rounded-full bg-emerald-400 animate-ping opacity-75" />
-                )}
-                <span
-                  className={`w-3.5 h-3.5 rounded-full ${
-                    voiceState === 'connected'
-                      ? 'bg-emerald-500 shadow-md shadow-emerald-500/50'
-                      : voiceState === 'error'
-                        ? 'bg-rose-500'
-                        : 'bg-amber-400 animate-pulse'
-                  }`}
-                />
-              </div>
-              <div className="min-w-0">
-                <div className="text-xs font-black text-slate-100">
-                  {voiceState === 'connected'
-                    ? (lang === 'ar' ? '🎙️ متصل ✅' : '🎙️ Connected ✅')
-                    : voiceState === 'reconnecting'
-                      ? (lang === 'ar' ? '⚠️ الصوت انقطع — جاري إعادة الاتصال...' : '⚠️ Voice lost — reconnecting...')
-                      : voiceState === 'error'
-                        ? (lang === 'ar' ? '❌ تعذر الاتصال الصوتي' : '❌ Voice connection failed')
-                        : (lang === 'ar' ? '🎙️ بيتم توصيل الصوت...' : '🎙️ Connecting voice...')}
-                </div>
-                <div className="text-[10px] text-slate-400 font-bold">
-                  {voice.remoteSpeaking
-                    ? (lang === 'ar' ? `🎙️ ${opponentName} يتكلم...` : `🎙️ ${opponentName} is speaking...`)
-                    : voice.localSpeaking
-                      ? (lang === 'ar' ? '🎙️ بتتكلم...' : '🎙️ You are speaking...')
-                      : isLiveMicOn
-                        ? (lang === 'ar' ? '🎙️ المايك مفتوح' : '🎙️ Mic is on')
-                        : (lang === 'ar' ? '🔇 المايك مقفول — لسه بتسمع الآخرين' : '🔇 Mic is off — you can still hear others')}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 shrink-0">
-              {voiceState === 'error' && (
-                <button
-                  type="button"
-                  onClick={() => liveVoiceManager.retry()}
-                  className="px-3 py-2.5 rounded-xl text-xs font-black bg-amber-600 text-white border border-amber-400 cursor-pointer active:scale-95"
-                >
-                  {lang === 'ar' ? 'إعادة المحاولة' : 'Retry'}
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={handleToggleLiveMic}
-                className={`px-3.5 py-2.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-md ${
-                  isLiveMicOn
-                    ? 'bg-rose-600 text-white hover:bg-rose-500 border border-rose-400'
-                    : 'bg-emerald-600 text-white hover:bg-emerald-500 border border-emerald-400'
-                }`}
-              >
-                {isLiveMicOn ? (
-                  <>
-                    <MicOff className="w-4 h-4 text-white" />
-                    <span>{lang === 'ar' ? 'قفل المايك' : 'Mic off'}</span>
-                  </>
-                ) : (
-                  <>
-                    <Mic className="w-4 h-4 text-white" />
-                    <span>{lang === 'ar' ? 'فتح المايك' : 'Mic on'}</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isOnlineMatch && liveMicError && (
-        <div className="px-3 py-1.5 bg-rose-950/70 border border-rose-600/50 rounded-xl text-[11px] font-bold text-rose-300 text-center animate-shake">
-          {liveMicError}
-        </div>
+      {isOnlineMatch && onlineRole && (
+        <VoiceChatBar
+          lang={lang}
+          selfId={myVoiceId}
+          selfName={viewerName}
+          players={[
+            { id: myVoiceId, name: viewerName },
+            { id: otherVoiceId, name: opponentName },
+          ]}
+        />
       )}
 
       {/* 2. TURN CALLOUT BANNER (Clearly stating whose turn it is to ask about their card) */}

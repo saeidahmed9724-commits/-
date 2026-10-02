@@ -11,9 +11,7 @@ export type GamePhase =
   | 'PLAYING'
   | 'ROUND_REVEAL'
   | 'GAME_OVER'
-  | 'MULTIPLAYER_SETUP'
-  | 'MULTIPLAYER_CHOOSE_PICTURES'
-  | 'MULTIPLAYER_PLAYING';
+  | 'MP_ONLINE'; // 3 / 4 players online (lobby, picking, playing and results are all inside)
 
 export type AnswerType = 'YES' | 'NO' | 'SOMETIMES' | 'NOT_SURE';
 
@@ -72,12 +70,8 @@ export interface PendingQuestionData {
   question: string;
   isVoice?: boolean;
   audioData?: string;
-  askerId?: string;
-  askerName?: string;
-  targetPlayerId?: string;
-  targetPlayerName?: string;
-  askedByRole?: 'host' | 'guest';
-  answeredByRole?: 'host' | 'guest';
+  askedByRole: 'host' | 'guest';
+  answeredByRole: 'host' | 'guest';
 }
 
 export interface Player {
@@ -98,48 +92,56 @@ export interface RoomState {
 }
 
 // ==========================================
-// MULTIPLAYER (3–4 PLAYERS) SYSTEM TYPES
+// ONLINE MULTIPLAYER (3–4 PLAYERS, EACH ON THEIR OWN DEVICE)
 // ==========================================
 
 export type PlayerCount = 2 | 3 | 4;
 
-export interface MultiplayerSecretImage {
-  id: string;
-  ownerId: string;
-  ownerName: string;
+export interface MpPicture {
   title: string;
   imageUrl: string;
-  category: string;
 }
 
-export interface MultiplayerTargetProgress {
-  ownerId: string;
-  ownerName: string;
-  isSolved: boolean;
-  solvedAtTimestamp?: number;
-  revealedImage?: MultiplayerSecretImage;
-}
-
-export interface MultiplayerPlayer {
+export interface MpPlayerView {
   id: string;
   name: string;
   score: number;
-  avatarColor: string;
-  secretImage?: MultiplayerSecretImage;
-  targets: MultiplayerTargetProgress[];
+  connected: boolean;
+  hasPicked: boolean;
+  /** Pictures this player already discovered: ownerId -> picture. */
+  solved: Record<string, MpPicture>;
+  /** Only filled in once the match is over. */
+  secret?: MpPicture;
 }
 
-export interface MultiplayerQuestionRecord {
+export interface MpPendingQuestion {
   id: string;
   question: string;
-  isVoice?: boolean;
-  isVoiceAnswer?: boolean;
   askerId: string;
   askerName: string;
   targetOwnerId: string;
   targetOwnerName: string;
+}
+
+export interface MpQuestionRecord extends MpPendingQuestion {
   answer: AnswerType;
   note?: string;
   timestamp: number;
   wasWinningGuess?: boolean;
+}
+
+export interface MpRoomState {
+  code: string;
+  maxPlayers: 3 | 4;
+  category: CategoryDefinition;
+  phase: 'LOBBY' | 'CHOOSING' | 'PLAYING' | 'GAMEOVER';
+  hostId: string;
+  meId: string;
+  activePlayerId?: string;
+  players: MpPlayerView[];
+  /** My own picture: visible only to me. */
+  mySecret?: MpPicture;
+  pendingQuestion?: MpPendingQuestion;
+  questions: MpQuestionRecord[];
+  lastSolved?: { id: string; askerName: string; ownerName: string; title: string; imageUrl: string };
 }

@@ -61,6 +61,8 @@ export const RoomLobbyScreen: React.FC<RoomLobbyScreenProps> = ({
   };
 
   const hasOpponent = Boolean(roomData?.guest?.name);
+  // The 2-player server sends host/guest (not players[]): count who is actually in the room.
+  const joinedCount = roomData?.players ? roomData.players.length : roomData?.guest?.name ? 2 : 1;
 
   return (
     <div className="w-full max-w-md mx-auto py-2 sm:py-4 px-4 animate-scale-up text-center space-y-3.5 pb-4">
@@ -268,7 +270,7 @@ export const RoomLobbyScreen: React.FC<RoomLobbyScreenProps> = ({
         {isHost && (
           <button
             type="button"
-            disabled={!roomData?.players || roomData.players.length < 2}
+            disabled={joinedCount < 2}
             onClick={() => {
               sound.playTurnChime();
               onlineService.startChoosing();
