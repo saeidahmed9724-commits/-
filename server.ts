@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { normalizeText, isCorrectGuess } from './src/utils/normalize';
 import { mpHandle, mpClose, type MpCtx } from './mpRooms';
+import { searchAllProviders, type SearchImageResult } from './imageProviders';
 
 dotenv.config();
 
@@ -14,17 +15,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '10mb' }));
-
-interface SearchImageResult {
-  id: string;
-  title: string;
-  thumbUrl: string;
-  fullUrl: string;
-  source: string;
-  width?: number;
-  height?: number;
-}
 
 const imageSearchCache = new Map<string, { timestamp: number; data: SearchImageResult[] }>();
 const CACHE_TTL_MS = 1000 * 60 * 30; // 30 minutes
@@ -151,9 +143,14 @@ function getExpandedQueries(rawQuery: string): string[] {
   return queries;
 }
 
+// Per-IP limit so one player cannot burn the free API quotas (Pexels: 200 requests/hour).
+const searchHits = new Map<string, { count: number; resetAt: number }>();
+const SEARCH_LIMIT_PER_MIN = 40;
+const MAX_CACHE_ENTRIES = 500;
+
 app.get('/api/search-images', async (req, res) => {
-  const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
-  const offset = parseInt(req.query.offset as string) || 0;
+  const query = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
+  const offset = Math.max(0, parseInt(req.query.offset as string) || 0);
   const limit = Math.min(parseInt(req.query.limit as string) || 60, 100);
 
   if (!query) {
@@ -163,96 +160,28 @@ app.get('/api/search-images', async (req, res) => {
   const cacheKey = `${query.toLowerCase()}_off${offset}_lim${limit}`;
   const cached = imageSearchCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-    return res.json({ results: cached.data, hasMore: cached.data.length >= limit });
+    return res.json({ results: cached.data, hasMore: cached.data.length >= 20 });
   }
 
-  const searchQueries = getExpandedQueries(query);
-  const results: SearchImageResult[] = [];
-  const seenUrls = new Set<string>();
-
-  // Fetch for each query until we have enough high quality results (up to 60+ images)
-  for (const q of searchQueries) {
-    if (results.length >= limit) break;
-
-    try {
-      // 1. Wikimedia Commons API
-      const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
-        q
-      )}&gsrnamespace=6&gsrlimit=${Math.min(limit, 60)}&gsroffset=${offset}&prop=imageinfo&iiprop=url|size&iiurlwidth=500&format=json&origin=*`;
-      const commonsRes = await fetch(commonsUrl, {
-        headers: { 'User-Agent': 'GuessWhoGame/1.0 (educational-game; contact: info@example.com)' },
-        signal: AbortSignal.timeout(6000),
-      });
-
-      if (commonsRes.ok) {
-        const data: any = await commonsRes.json();
-        const pages = data?.query?.pages ? Object.values(data.query.pages) : [];
-        for (const p of pages as any[]) {
-          const info = p.imageinfo?.[0];
-          const thumbUrl = info?.thumburl || info?.url;
-          const fullUrl = info?.url || thumbUrl;
-          if (
-            thumbUrl &&
-            !seenUrls.has(thumbUrl) &&
-            !/\.(pdf|ogg|ogv|webm|djvu|tiff?)$/i.test(fullUrl)
-          ) {
-            seenUrls.add(thumbUrl);
-            const rawTitle = (p.title || '')
-              .replace(/^File:/i, '')
-              .replace(/\.[^/.]+$/, '')
-              .replace(/[-_]/g, ' ')
-              .trim();
-            results.push({
-              id: 'cm-' + p.pageid,
-              title: rawTitle.length > 50 ? rawTitle.slice(0, 50) + '...' : rawTitle || query,
-              thumbUrl,
-              fullUrl,
-              source: 'Wikimedia',
-              width: info?.thumbwidth,
-              height: info?.thumbheight,
-            });
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Commons search error for', q, err);
-    }
-
-    // 2. Openverse API fallback or enrichment if results < limit
-    if (results.length < limit) {
-      try {
-        const pageNum = Math.floor(offset / 30) + 1;
-        const openverseUrl = `https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}&page_size=30&page=${pageNum}`;
-        const ovRes = await fetch(openverseUrl, {
-          headers: { 'User-Agent': 'GuessWhoGame/1.0' },
-          signal: AbortSignal.timeout(4000),
-        });
-        if (ovRes.ok) {
-          const data: any = await ovRes.json();
-          for (const item of (data.results || []) as any[]) {
-            const thumbUrl = item.thumbnail || item.url;
-            const fullUrl = item.url;
-            if (thumbUrl && !seenUrls.has(thumbUrl)) {
-              seenUrls.add(thumbUrl);
-              results.push({
-                id: 'ov-' + item.id,
-                title: item.title || query,
-                thumbUrl,
-                fullUrl,
-                source: 'Openverse',
-              });
-            }
-          }
-        }
-      } catch (err) {
-        // Ignore openverse error
-      }
-    }
+  const ip = req.ip || 'unknown';
+  const now = Date.now();
+  const hit = searchHits.get(ip);
+  if (!hit || hit.resetAt < now) searchHits.set(ip, { count: 1, resetAt: now + 60_000 });
+  else if (++hit.count > SEARCH_LIMIT_PER_MIN) {
+    return res.status(429).json({ results: [], hasMore: false, error: 'Too many searches, wait a minute' });
   }
 
-  // Cache results
-  imageSearchCache.set(cacheKey, { timestamp: Date.now(), data: results });
-  return res.json({ results, hasMore: results.length >= 20 });
+  const outcome = await searchAllProviders({ fetch, env: process.env }, query, offset, limit, getExpandedQueries);
+  console.log(`[image-search] "${query}" ->`, outcome.results.length, JSON.stringify(outcome.providers));
+
+  if (outcome.results.length > 0) {
+    imageSearchCache.set(cacheKey, { timestamp: now, data: outcome.results });
+    if (imageSearchCache.size > MAX_CACHE_ENTRIES) {
+      const oldest = imageSearchCache.keys().next().value;
+      if (oldest !== undefined) imageSearchCache.delete(oldest);
+    }
+  }
+  return res.json({ results: outcome.results, hasMore: outcome.hasMore });
 });
 
 const server = http.createServer(app);

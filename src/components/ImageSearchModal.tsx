@@ -335,6 +335,26 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
                 })}
               </div>
 
+              {/* Source credit (Pexels requires a visible link back to Pexels) */}
+              <div className="pt-2 text-[10px] font-bold text-slate-500 text-center leading-relaxed" data-testid="search-sources">
+                {lang === 'ar' ? 'مصادر الصور: ' : 'Image sources: '}
+                {[
+                  { name: 'Wikipedia', url: 'https://www.wikipedia.org', has: validResults.some((r) => r.source === 'Wikipedia' || r.source === 'ويكيبيديا') },
+                  { name: 'Pexels', url: 'https://www.pexels.com', has: validResults.some((r) => r.source === 'Pexels') },
+                  { name: 'Openverse', url: 'https://openverse.org', has: validResults.some((r) => r.source === 'Openverse') },
+                  { name: 'Wikimedia', url: 'https://commons.wikimedia.org', has: validResults.some((r) => r.source === 'Wikimedia') },
+                ]
+                  .filter((x) => x.has)
+                  .map((x, i) => (
+                    <React.Fragment key={x.name}>
+                      {i > 0 && ' · '}
+                      <a href={x.url} target="_blank" rel="noopener noreferrer" className="text-slate-400 underline">
+                        {x.name}
+                      </a>
+                    </React.Fragment>
+                  ))}
+              </div>
+
               {/* Load More Button */}
               {hasMore && (
                 <div className="pt-2 pb-1 text-center">
@@ -393,6 +413,19 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
 
                 {/* Title & Secret Info */}
                 <div className="flex-1 min-w-0 space-y-1">
+                  {selectedItem.credit && (
+                    <div className="text-[10px] font-bold text-slate-500 truncate">
+                      📷{' '}
+                      {selectedItem.creditUrl ? (
+                        <a href={selectedItem.creditUrl} target="_blank" rel="noopener noreferrer" className="underline">
+                          {selectedItem.credit}
+                        </a>
+                      ) : (
+                        selectedItem.credit
+                      )}{' '}
+                      · {selectedItem.source}
+                    </div>
+                  )}
                   <label className="text-[11px] font-bold text-slate-300 block">
                     {lang === 'ar' ? 'اسم العنصر السري:' : 'Secret Item Name:'}
                   </label>

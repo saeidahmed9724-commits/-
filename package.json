@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test:mp": "node tests/mp-rules.mjs"
+    "test:mp": "node tests/mp-rules.mjs",
+    "test:search": "tsx tests/image-search.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

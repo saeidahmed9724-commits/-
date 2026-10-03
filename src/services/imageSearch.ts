@@ -6,6 +6,9 @@ export interface SearchImageItem {
   source?: string;
   width?: number;
   height?: number;
+  /** Photographer / author (shown when the source asks for attribution). */
+  credit?: string;
+  creditUrl?: string;
 }
 
 // Popular quick-search queries per category for instant discovery
