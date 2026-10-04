@@ -12,6 +12,14 @@
 //   - the turn then passes to the next player; the match ends when nobody has anything left to guess.
 
 import { WebSocket } from 'ws';
+import {
+  ScheduleState,
+  SchedulePlayer,
+  createScheduleState,
+  nextTurn,
+  previewTurns,
+  recordTurn,
+} from './src/utils/turnSchedule';
 
 type Answer = 'YES' | 'NO' | 'SOMETIMES' | 'NOT_SURE';
 const ANSWERS: Answer[] = ['YES', 'NO', 'SOMETIMES', 'NOT_SURE'];
@@ -49,6 +57,11 @@ interface MpRoom {
   players: MpPlayer[];
   nextSeq: number;
   activeId?: string;
+  /** Mandatory organisation: the game decides who asks (activeId) and whom (turn.targetId). */
+  turn?: { askerId: string; targetId: string };
+  sched: ScheduleState;
+  /** How many questions each player has actually received this match. */
+  asked: Record<string, number>;
   pendingQuestion?: {
     id: string;
     question: string;
@@ -91,6 +104,17 @@ function publicState(room: MpRoom, me: MpPlayer) {
       hostId: room.hostId,
       meId: me.id,
       activePlayerId: room.activeId,
+      // Mandatory turn organisation, visible to everybody (read-only).
+      turn: room.turn
+        ? {
+            askerId: room.turn.askerId,
+            askerName: room.players.find((p) => p.id === room.turn!.askerId)?.name,
+            targetId: room.turn.targetId,
+            targetName: room.players.find((p) => p.id === room.turn!.targetId)?.name,
+          }
+        : undefined,
+      upcoming: room.turn ? upcomingTurns(room) : [],
+      askedCounts: Object.fromEntries(room.players.map((p) => [p.id, room.asked[p.id] ?? 0])),
       players: room.players.map((p) => ({
         id: p.id,
         name: p.name,
@@ -122,27 +146,53 @@ function broadcast(room: MpRoom) {
 const candidateTargets = (room: MpRoom, asker: MpPlayer) =>
   room.players.filter((t) => t.id !== asker.id && t.connected && t.secret && !asker.solved[t.id]);
 
-/** Next connected player (after `fromId`) who still has something to guess. */
-function pickNextActive(room: MpRoom, fromId?: string): MpPlayer | undefined {
-  const n = room.players.length;
-  const start = fromId ? room.players.findIndex((p) => p.id === fromId) : -1;
-  for (let i = 1; i <= n; i++) {
-    const p = room.players[(start + i + n) % n];
-    if (p.connected && candidateTargets(room, p).length > 0) return p;
-  }
-  return undefined;
+/**
+ * Players as the scheduler sees them. A target that is not available right now (disconnected, or
+ * no picture yet) is treated as "already solved" so it is skipped, exactly like a burned picture.
+ */
+function schedulePlayers(room: MpRoom): SchedulePlayer[] {
+  return room.players.map((p) => ({
+    id: p.id,
+    solvedIds: [
+      ...Object.keys(p.solved),
+      ...room.players.filter((t) => t.id !== p.id && (!t.connected || !t.secret)).map((t) => t.id),
+    ],
+  }));
 }
 
-function advanceTurn(room: MpRoom) {
-  const next = pickNextActive(room, room.activeId);
-  if (!next) {
-    room.phase = 'GAMEOVER';
-    room.activeId = undefined;
-    room.pendingQuestion = undefined;
-  } else {
-    room.activeId = next.id;
-  }
+function upcomingTurns(room: MpRoom) {
+  const idx = room.players.findIndex((p) => p.id === room.turn?.askerId);
+  const name = (id: string) => room.players.find((p) => p.id === id)?.name;
+  return previewTurns(schedulePlayers(room), idx, room.sched, room.players.length)
+    .filter((t) => room.players[t.askerIndex]?.connected)
+    .slice(0, 3)
+    .map((t) => ({ askerId: t.askerId, askerName: name(t.askerId), targetId: t.targetId, targetName: name(t.targetId) }));
 }
+
+/** The next fair turn: next asker in seat order, target = whoever was asked the fewest times. */
+function advanceTurn(room: MpRoom) {
+  const sp = schedulePlayers(room);
+  let from = room.turn ? room.players.findIndex((p) => p.id === room.turn!.askerId) : -1;
+  for (let tries = 0; tries <= room.players.length; tries++) {
+    const t = nextTurn(sp, from, room.sched);
+    if (!t) break;
+    if (!room.players[t.askerIndex].connected) {
+      from = t.askerIndex; // an absent player's turn is skipped (not recorded)
+      continue;
+    }
+    recordTurn(room.sched, t);
+    room.turn = { askerId: t.askerId, targetId: t.targetId };
+    room.activeId = t.askerId;
+    return;
+  }
+  room.phase = 'GAMEOVER';
+  room.activeId = undefined;
+  room.turn = undefined;
+  room.pendingQuestion = undefined;
+}
+
+const reject = (ws: WebSocket | undefined, code: string, message: string) =>
+  safeSend(ws, { type: 'MP_ERROR', code, message });
 
 function startPlaying(room: MpRoom) {
   room.phase = 'PLAYING';
@@ -150,6 +200,9 @@ function startPlaying(room: MpRoom) {
   room.pendingQuestion = undefined;
   room.lastSolved = undefined;
   room.activeId = undefined;
+  room.turn = undefined;
+  room.sched = createScheduleState();
+  room.asked = {};
   advanceTurn(room);
 }
 
@@ -200,6 +253,8 @@ export function mpHandle(ws: WebSocket, ctx: MpCtx, msg: any): boolean {
       players: [host],
       nextSeq: 2,
       questions: [],
+      sched: createScheduleState(),
+      asked: {},
     };
     rooms.set(code, room);
     ctx.code = code;
@@ -287,11 +342,27 @@ export function mpHandle(ws: WebSocket, ctx: MpCtx, msg: any): boolean {
     }
 
     case 'MP_ASK': {
-      if (room.phase !== 'PLAYING' || room.activeId !== me.id || room.pendingQuestion) return true;
-      const target = room.players.find((p) => p.id === msg.targetId);
+      if (room.phase !== 'PLAYING') return true;
+      if (room.pendingQuestion) {
+        reject(me.ws, 'BUSY', 'A question is already waiting for its answer');
+        return true;
+      }
+      // Only the player the schedule gave this turn to can ask.
+      if (!room.turn || room.turn.askerId !== me.id || room.activeId !== me.id) {
+        reject(me.ws, 'NOT_YOUR_TURN', 'It is not your turn');
+        return true;
+      }
+      // The target is chosen by the game; msg.targetId (if any) is ignored.
+      const target = room.players.find((p) => p.id === room.turn!.targetId);
       const question = clean(msg.question, 300);
-      if (!target || !question) return true;
-      if (!candidateTargets(room, me).some((t) => t.id === target.id)) return true;
+      if (!question) {
+        reject(me.ws, 'EMPTY_QUESTION', 'Write a question');
+        return true;
+      }
+      if (!target || !candidateTargets(room, me).some((t) => t.id === target.id)) {
+        reject(me.ws, 'NO_TARGET', 'No valid target for this turn');
+        return true;
+      }
       room.pendingQuestion = {
         id: 'mq-' + Date.now() + Math.random().toString(36).slice(2, 6),
         question,
@@ -300,14 +371,24 @@ export function mpHandle(ws: WebSocket, ctx: MpCtx, msg: any): boolean {
         targetOwnerId: target.id,
         targetOwnerName: target.name,
       };
+      room.asked[target.id] = (room.asked[target.id] ?? 0) + 1;
       broadcast(room);
       return true;
     }
 
     case 'MP_ANSWER': {
       const q = room.pendingQuestion;
-      if (room.phase !== 'PLAYING' || !q || q.targetOwnerId !== me.id) return true;
-      const answer: Answer = ANSWERS.includes(msg.answer) ? msg.answer : 'NOT_SURE';
+      if (room.phase !== 'PLAYING' || !q) return true;
+      // Only the player the question was addressed to may answer; nobody can answer for them.
+      if (q.targetOwnerId !== me.id) {
+        reject(me.ws, 'NOT_YOUR_QUESTION', 'This question is not for you');
+        return true;
+      }
+      if (!ANSWERS.includes(msg.answer)) {
+        reject(me.ws, 'BAD_ANSWER', 'Invalid answer');
+        return true;
+      }
+      const answer: Answer = msg.answer;
       const note = clean(msg.note, 200) || undefined;
       room.questions.unshift({ ...q, answer, note, timestamp: Date.now() });
       room.pendingQuestion = undefined;
@@ -318,7 +399,11 @@ export function mpHandle(ws: WebSocket, ctx: MpCtx, msg: any): boolean {
 
     case 'MP_DECLARE_WIN': {
       const q = room.pendingQuestion;
-      if (room.phase !== 'PLAYING' || !q || q.targetOwnerId !== me.id || !me.secret) return true;
+      if (room.phase !== 'PLAYING' || !q || !me.secret) return true;
+      if (q.targetOwnerId !== me.id) {
+        reject(me.ws, 'NOT_YOUR_QUESTION', 'This question is not for you');
+        return true;
+      }
       const asker = room.players.find((p) => p.id === q.askerId);
       if (!asker) return true;
       asker.score += 1;
@@ -355,6 +440,9 @@ export function mpHandle(ws: WebSocket, ctx: MpCtx, msg: any): boolean {
         room.pendingQuestion = undefined;
         room.lastSolved = undefined;
         room.activeId = undefined;
+        room.turn = undefined;
+        room.sched = createScheduleState();
+        room.asked = {};
         room.phase = room.players.length >= 2 ? 'CHOOSING' : 'LOBBY';
         broadcast(room);
       }
@@ -364,6 +452,7 @@ export function mpHandle(ws: WebSocket, ctx: MpCtx, msg: any): boolean {
       if (room.phase === 'PLAYING' && me.id === room.hostId) {
         room.phase = 'GAMEOVER';
         room.activeId = undefined;
+        room.turn = undefined;
         room.pendingQuestion = undefined;
         broadcast(room);
       }
@@ -372,8 +461,12 @@ export function mpHandle(ws: WebSocket, ctx: MpCtx, msg: any): boolean {
     case 'MP_LEAVE':
       mpClose(ctx);
       return true;
+
+    default:
+      // There is no message to skip, repeat, swap or reorder turns.
+      reject(me.ws, 'UNKNOWN_MESSAGE', 'Unknown message');
+      return true;
   }
-  return true;
 }
 
 /** The player's socket closed or they left. */
@@ -416,8 +509,9 @@ export function mpClose(ctx: MpCtx) {
     } else if (q && q.askerId === me.id) {
       room.pendingQuestion = undefined;
     }
-    if (room.activeId === me.id || !room.activeId) advanceTurn(room);
-    else if (!room.pendingQuestion && !pickNextActive(room, room.activeId)) advanceTurn(room);
+    // If the turn depended on the player who left (asker or not-yet-asked target), move on fairly.
+    const turnBroken = !room.turn || room.turn.askerId === me.id || (!room.pendingQuestion && room.turn.targetId === me.id);
+    if (turnBroken) advanceTurn(room);
   }
 
   const anyone = room.players.some((p) => p.connected);

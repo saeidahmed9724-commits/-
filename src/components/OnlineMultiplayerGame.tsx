@@ -198,7 +198,6 @@ const ChoosePicture: React.FC<{ room: MpRoomState; me: MpPlayerView; lang: 'ar' 
 // ----------------------------------------------------------------------------------------
 const Arena: React.FC<{ room: MpRoomState; me: MpPlayerView; lang: 'ar' | 'en' }> = ({ room, me, lang }) => {
   const ar = lang === 'ar';
-  const [target, setTarget] = useState<string | null>(null);
   const [text, setText] = useState('');
   const [note, setNote] = useState('');
   const [showMine, setShowMine] = useState(false);
@@ -208,13 +207,10 @@ const Arena: React.FC<{ room: MpRoomState; me: MpPlayerView; lang: 'ar' | 'en' }
   const active = room.players.find((p) => p.id === room.activePlayerId);
   const myTurn = room.activePlayerId === me.id;
   const iAmTarget = pq?.targetOwnerId === me.id;
-  const targets = room.players.filter((p) => p.id !== me.id && p.hasPicked);
-  const free = targets.filter((p) => !me.solved[p.id] && p.connected);
-
-  // Default / keep a valid target selected.
-  useEffect(() => {
-    if (myTurn && !free.some((p) => p.id === target)) setTarget(free[0]?.id ?? null);
-  }, [myTurn, free.map((p) => p.id).join(','), target]);
+  // Mandatory organisation: the server decides who asks whom. Nobody picks a target.
+  const turn = room.turn;
+  const myTarget = turn && turn.askerId === me.id ? room.players.find((p) => p.id === turn.targetId) : undefined;
+  const nextName = (t: { askerName?: string; targetName?: string }) => `${t.askerName} ← ${t.targetName}`;
 
   // Sounds / celebration on shared events (these never touch the microphone).
   const lastTurn = useRef<string | undefined>(undefined);
@@ -237,9 +233,9 @@ const Arena: React.FC<{ room: MpRoomState; me: MpPlayerView; lang: 'ar' | 'en' }
   }, [room.lastSolved?.id]);
 
   const send = () => {
-    if (!target || !text.trim()) return;
+    if (!myTarget || !text.trim()) return;
     sound.playTurnChime();
-    onlineService.mpAsk(target, text.trim());
+    onlineService.mpAsk(text.trim());
     setText('');
   };
   const answer = (a: AnswerType) => {
@@ -313,40 +309,55 @@ const Arena: React.FC<{ room: MpRoomState; me: MpPlayerView; lang: 'ar' | 'en' }
         </div>
       )}
 
-      {/* 2) my turn: choose a target and ask */}
-      {!pq && myTurn && (
-        <div className="game-card-surface p-4 border border-purple-500/50 space-y-3">
+      {/* The person being asked: a clear call to answer */}
+      {pq && iAmTarget && (
+        <div role="alert" data-testid="target-alert" className="rounded-2xl p-3 text-center bg-purple-600 text-white text-sm font-black animate-pulse">
+          🔔 {ar ? `${pq.askerName} سألك — المطلوب منك الرد أنت بس` : `${pq.askerName} asked you — only you can answer`}
+        </div>
+      )}
+
+      {/* 2) my turn: the game tells me whom to ask (no choice) */}
+      {!pq && myTurn && myTarget && (
+        <div data-testid="ask-panel" className="game-card-surface p-4 border border-purple-500/50 space-y-3">
           <div className="text-sm font-black text-white">{ar ? 'دورك الآن 🎯' : 'Your turn 🎯'}</div>
-          <div className="grid grid-cols-2 gap-2">
-            {targets.map((p) => {
-              const solved = me.solved[p.id];
-              const on = target === p.id;
-              return (
-                <button key={p.id} type="button" disabled={Boolean(solved) || !p.connected} onClick={() => { sound.playCardFlip(); setTarget(p.id); }} className={`p-2.5 rounded-2xl border-2 text-start text-xs font-black cursor-pointer ${solved ? 'bg-emerald-950/40 border-emerald-600/50 text-emerald-300' : on ? 'bg-purple-600/25 border-purple-500 ring-2 ring-purple-400 text-white' : 'bg-[#0F172A] border-slate-800 text-slate-300'} ${!p.connected && !solved ? 'opacity-40' : ''}`}>
-                  <div>{p.name}{!p.connected && ' 📴'}</div>
-                  {solved ? (
-                    <div className="flex items-center gap-1.5 mt-1"><img src={solved.imageUrl} alt="" className="w-7 h-7 object-contain" /><span className="truncate">{solved.title}</span></div>
-                  ) : (
-                    <div className="text-[10px] text-slate-400 mt-1">{ar ? 'صورة سرية ❓' : 'Secret picture ❓'}</div>
-                  )}
-                </button>
-              );
-            })}
+          <div data-testid="assigned-target" className="p-3 rounded-2xl bg-purple-600/25 border-2 border-purple-500 text-center">
+            <div className="text-[11px] font-bold text-purple-200">{ar ? 'اللعبة حددت لك تسأل:' : 'The game assigned you to ask:'}</div>
+            <div className="text-lg font-black text-white">{myTarget.name}</div>
+            <div className="text-[10px] font-bold text-slate-400 mt-0.5">{ar ? 'الأدوار إجبارية وبالتساوي — مفيش اختيار' : 'Turns are mandatory and equal — no choice'}</div>
           </div>
           <div className="flex gap-2">
-            <input autoFocus value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} placeholder={ar ? 'اكتب سؤالك عن الصورة...' : 'Type your question...'} className="flex-1 h-12 bg-[#070D1E] border border-slate-700 focus:border-blue-500 rounded-xl px-3 text-sm text-white font-bold placeholder-slate-500 focus:outline-none" />
-            <button type="button" disabled={!target || !text.trim()} onClick={send} className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white flex items-center justify-center disabled:opacity-40 cursor-pointer active:scale-95">
+            <input autoFocus value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} placeholder={ar ? `اكتب سؤالك لـ ${myTarget.name}...` : `Type your question for ${myTarget.name}...`} className="flex-1 h-12 bg-[#070D1E] border border-slate-700 focus:border-blue-500 rounded-xl px-3 text-sm text-white font-bold placeholder-slate-500 focus:outline-none" />
+            <button type="button" disabled={!text.trim()} onClick={send} className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white flex items-center justify-center disabled:opacity-40 cursor-pointer active:scale-95">
               <Send className="w-5 h-5" />
             </button>
           </div>
         </div>
       )}
 
-      {/* 3) someone else's turn */}
+      {/* 3) everybody else only watches the current turn */}
       {!pq && !myTurn && (
-        <div className="game-card-surface p-4 border border-slate-700 text-center text-sm font-black text-slate-300">
-          {ar ? `دور ${active?.name ?? '...'} 🎯` : `${active?.name ?? '...'}'s turn 🎯`}
+        <div data-testid="watch-turn" className="game-card-surface p-4 border border-slate-700 text-center text-sm font-black text-slate-300">
+          {turn
+            ? (turn.targetId === me.id
+                ? (ar ? `${turn.askerName} هيسألك دلوقتي — جهّز نفسك 🔔` : `${turn.askerName} is about to ask you 🔔`)
+                : (ar ? `${turn.askerName} بيسأل ${turn.targetName} 🎯` : `${turn.askerName} asks ${turn.targetName} 🎯`))
+            : (ar ? `دور ${active?.name ?? '...'} 🎯` : `${active?.name ?? '...'}'s turn 🎯`)}
           <div className="text-[11px] font-bold text-slate-500 mt-1">{ar ? 'تقدر تتكلم وتسمع الكل في أي وقت 🎙️' : 'You can talk and listen any time 🎙️'}</div>
+        </div>
+      )}
+      {pq && !iAmTarget && pq.askerId !== me.id && (
+        <div className="text-center text-[11px] font-bold text-slate-400">
+          {ar ? '👀 إنت بتتفرج على الدور الحالي — الرد من اللاعب المستهدف بس' : '👀 You are watching this turn — only the asked player can answer'}
+        </div>
+      )}
+
+      {/* up next + fairness */}
+      {room.upcoming && room.upcoming.length > 0 && (
+        <div data-testid="upcoming" className="text-center text-[10px] font-bold text-slate-400">
+          {ar ? 'بعد كده: ' : 'Next: '}{room.upcoming.map(nextName).join('  •  ')}
+          <div className="text-slate-500 mt-0.5">
+            {ar ? 'اتسأل: ' : 'Asked: '}{room.players.map((p) => `${p.name} ${room.askedCounts?.[p.id] ?? 0}×`).join(' · ')}
+          </div>
         </div>
       )}
 
