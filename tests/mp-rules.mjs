@@ -46,20 +46,33 @@ try {
     // wrong player asking is rejected
     cs[1].send({ type: 'MP_ASK', targetId: cs[2].id, question: 'x?' }); await sleep(80);
     check(`${n}p: non-active player cannot ask`, !cs[0].state.pendingQuestion);
-    // cannot target self
-    cs[0].send({ type: 'MP_ASK', targetId: cs[0].id, question: 'self?' }); await sleep(80);
-    check(`${n}p: cannot target yourself`, !cs[0].state.pendingQuestion);
-    cs[0].send({ type: 'MP_ASK', targetId: cs[1].id, question: 'Is it red?' }); await sleep(100);
+    // MANDATORY ORGANISATION: the game assigns the target; a forged targetId (even yourself) is ignored
+    const t1 = cs[0].state.turn;
+    check(`${n}p: server publishes who asks whom (P1 -> P2)`, t1?.askerId === cs[0].id && t1?.targetId === cs[1].id);
+    check(`${n}p: everyone sees the same turn + an up-next list`, cs.every((c) => c.state.turn?.targetId === t1.targetId) && cs[0].state.upcoming.length > 0);
+    cs[0].send({ type: 'MP_ASK', targetId: cs[0].id, question: 'Is it red?' }); await sleep(100);
     check(`${n}p: question reaches everyone`, cs.every((c) => c.state.pendingQuestion?.question === 'Is it red?'));
+    check(`${n}p: forged targetId ignored - question goes to the assigned target`, cs[0].state.pendingQuestion.targetOwnerId === cs[1].id);
+    cs[0].send({ type: 'MP_ASK', question: 'second?' }); await sleep(60);
+    check(`${n}p: second question while one is pending is refused (BUSY)`, cs[0].events.some((e) => e.type === 'MP_ERROR' && e.code === 'BUSY') && cs[0].state.pendingQuestion.question === 'Is it red?');
     cs[2].send({ type: 'MP_ANSWER', answer: 'YES' }); await sleep(80);
-    check(`${n}p: only the target owner can answer`, Boolean(cs[0].state.pendingQuestion));
+    check(`${n}p: only the target owner can answer`, Boolean(cs[0].state.pendingQuestion) && cs[2].events.some((e) => e.type === 'MP_ERROR' && e.code === 'NOT_YOUR_QUESTION'));
+    cs[0].send({ type: 'MP_ANSWER', answer: 'YES' }); cs[2].send({ type: 'MP_DECLARE_WIN' }); await sleep(80);
+    check(`${n}p: asker / bystander can neither answer nor declare the win`, Boolean(cs[0].state.pendingQuestion) && cs[0].state.players.every((p) => p.score === 0));
+    cs[1].send({ type: 'MP_ANSWER', answer: 'MAYBE' }); await sleep(60);
+    check(`${n}p: invalid answer refused`, cs[1].events.some((e) => e.type === 'MP_ERROR' && e.code === 'BAD_ANSWER') && Boolean(cs[0].state.pendingQuestion));
     cs[1].send({ type: 'MP_ANSWER', answer: 'NO', note: 'nope' }); await sleep(100);
     check(`${n}p: answer logged, turn passes to P2`, cs[0].state.questions[0].answer === 'NO' && cs[0].state.activePlayerId === cs[1].id);
-    // P2 asks P1 and P1 declares win
-    cs[1].send({ type: 'MP_ASK', targetId: cs[0].id, question: 'Is it T0?' }); await sleep(100);
-    cs[0].send({ type: 'MP_DECLARE_WIN' }); await sleep(100);
+    // P2 asks the target the game assigned and that target declares the win
+    const t2 = cs[1].state.turn; const tc = cs.find((c) => c.id === t2.targetId); const ti = cs.indexOf(tc);
+    check(`${n}p: fair rotation - P2 is given someone P1 did not ask (P3)`, t2.askerId === cs[1].id && t2.targetId === cs[2].id);
+    for (const type of ['MP_SKIP_TURN', 'MP_SET_TARGET', 'MP_SWAP_TURN']) cs[1].send({ type, targetId: cs[0].id });
+    await sleep(80);
+    check(`${n}p: no message exists to skip / swap a turn`, cs[1].events.filter((e) => e.type === 'MP_ERROR' && e.code === 'UNKNOWN_MESSAGE').length === 3 && cs[0].state.turn.targetId === t2.targetId);
+    cs[1].send({ type: 'MP_ASK', targetId: cs[0].id, question: 'Is it that?' }); await sleep(100);
+    tc.send({ type: 'MP_DECLARE_WIN' }); await sleep(100);
     const p2 = cs[0].state.players.find((p) => p.id === cs[1].id);
-    check(`${n}p: win -> +1 for asker and picture revealed to all`, p2.score === 1 && p2.solved[cs[0].id]?.title === 'T0' && cs[2].state.lastSolved?.title === 'T0');
+    check(`${n}p: win -> +1 for asker and picture revealed to all`, p2.score === 1 && p2.solved[tc.id]?.title === 'T' + ti && cs[0].state.lastSolved?.title === 'T' + ti);
     // solved target cannot be asked again by P2 -> after P3's turn
     const nextActive = cs.find((c) => c.id === cs[0].state.activePlayerId);
     check(`${n}p: turn advanced after win`, nextActive && nextActive !== cs[1]);
@@ -81,8 +94,9 @@ try {
       const act = cs.find((c) => c.state && c.state.activePlayerId === c.id);
       if (!act) break;
       const me = act.state.players.find((p) => p.id === act.id);
-      const tgt = act.state.players.find((p) => p.id !== act.id && !me.solved[p.id]);
-      act.send({ type: 'MP_ASK', targetId: tgt.id, question: 'q' }); await sleep(60);
+      const tgt = act.state.players.find((p) => p.id === act.state.turn.targetId);
+      if (me.solved[tgt.id]) { check(`${n}p: a solved picture is never assigned again`, false); break; }
+      act.send({ type: 'MP_ASK', question: 'q' }); await sleep(60);
       cs.find((c) => c.id === tgt.id).send({ type: 'MP_DECLARE_WIN' }); await sleep(60);
     }
     const final = cs[0].state;

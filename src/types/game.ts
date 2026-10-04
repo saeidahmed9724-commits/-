@@ -130,6 +130,13 @@ export interface MpQuestionRecord extends MpPendingQuestion {
   wasWinningGuess?: boolean;
 }
 
+export interface MpTurnInfo {
+  askerId: string;
+  askerName?: string;
+  targetId: string;
+  targetName?: string;
+}
+
 export interface MpRoomState {
   code: string;
   maxPlayers: 3 | 4;
@@ -138,6 +145,12 @@ export interface MpRoomState {
   hostId: string;
   meId: string;
   activePlayerId?: string;
+  /** Mandatory organisation: who asks whom right now (decided by the server). */
+  turn?: MpTurnInfo;
+  /** The next few turns, assuming nobody solves anything in between. */
+  upcoming?: MpTurnInfo[];
+  /** How many questions each player has received this match (shows the fairness). */
+  askedCounts?: Record<string, number>;
   players: MpPlayerView[];
   /** My own picture: visible only to me. */
   mySecret?: MpPicture;
