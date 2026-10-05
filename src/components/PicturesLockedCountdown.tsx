@@ -52,7 +52,7 @@ export const PicturesLockedCountdown: React.FC<PicturesLockedCountdownProps> = (
           </div>
 
           {/* Card 2: Clue Card (Tilted Right) */}
-          <div className="w-28 h-38 rounded-2xl bg-[#0F172A] border border-blue-500/40 flex flex-col items-center justify-center shadow-xl transform rotate-12 hover:rotate-6 transition-transform p-3 z-0">
+          <div className="w-28 h-38 rounded-2xl bg-[#1b2150]/60 backdrop-blur-md border border-blue-500/40 flex flex-col items-center justify-center shadow-xl transform rotate-12 hover:rotate-6 transition-transform p-3 z-0">
             <span className="text-5xl drop-shadow-md">🍕</span>
           </div>
         </div>
@@ -79,7 +79,7 @@ export const PicturesLockedCountdown: React.FC<PicturesLockedCountdownProps> = (
                 className={`w-14 h-14 rounded-2xl flex items-center justify-center font-mono font-black text-2xl transition-all ${
                   isCurrent
                     ? 'bg-amber-400 text-slate-950 scale-110 shadow-lg'
-                    : 'bg-[#0F172A] text-slate-500 border border-slate-700'
+                    : 'bg-[#1b2150]/60 backdrop-blur-md text-slate-500 border border-indigo-300/30'
                 }`}
               >
                 {num}

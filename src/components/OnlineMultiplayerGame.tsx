@@ -52,7 +52,7 @@ export const OnlineMultiplayerGame: React.FC<Props> = ({ room, onLeave, lang, on
 
   const neon = room.phase === 'PLAYING';
   return (
-    <div style={neon ? NEON_BG_STYLE : undefined} className={`w-full max-w-md mx-auto flex flex-col gap-3 pb-6 select-none animate-scale-up ${neon ? NEON_BG + ' p-3 rounded-[28px]' : ''}`}>
+    <div className="w-full max-w-md mx-auto flex flex-col gap-3 pb-6 select-none animate-scale-up">
       {neon && (
         <NeonTopBar
           round={Math.floor(room.questions.length / Math.max(1, room.players.length)) + 1}
@@ -63,7 +63,7 @@ export const OnlineMultiplayerGame: React.FC<Props> = ({ room, onLeave, lang, on
         />
       )}
       <VoiceChatBar
-        neon={neon}
+        neon
         lang={lang}
         selfId={room.meId}
         selfName={me.name}
@@ -81,12 +81,6 @@ export const OnlineMultiplayerGame: React.FC<Props> = ({ room, onLeave, lang, on
 // ----------------------------------------------------------------------------------------
 // Neon look (the playing screen)
 // ----------------------------------------------------------------------------------------
-const NEON_BG = 'min-h-[calc(100dvh-1rem)] bg-cover bg-center bg-[#0b1030]';
-const NEON_BG_STYLE: React.CSSProperties = {
-  // dark veil keeps the text readable; the gradient underneath is the fallback if the image fails to load
-  backgroundImage:
-    'linear-gradient(rgba(8,10,32,0.28), rgba(10,8,34,0.50)), url(/art/bg-living-room.webp), linear-gradient(180deg,#0b1030,#140d33 55%,#1a1030)',
-};
 const GLASS = 'rounded-[26px] border border-indigo-400/30 bg-[#1b2150]/60 backdrop-blur-md shadow-[0_0_28px_rgba(99,102,241,0.22)]';
 
 const NeonTopBar: React.FC<{ round: number; ar: boolean; soundEnabled: boolean; onOpenRules?: () => void; onToggleSound?: () => void }> = ({ round, ar, soundEnabled, onOpenRules, onToggleSound }) => (
@@ -151,7 +145,7 @@ const Lobby: React.FC<{ room: MpRoomState; lang: 'ar' | 'en'; onLeave: () => voi
         {Array.from({ length: room.maxPlayers }).map((_, i) => {
           const p = room.players[i];
           return (
-            <div key={i} className={`p-2.5 rounded-xl border text-xs font-black flex items-center justify-between ${p ? 'bg-[#0F172A] border-slate-700 text-white' : 'bg-transparent border-dashed border-slate-700 text-slate-500'}`}>
+            <div key={i} className={`p-2.5 rounded-xl border text-xs font-black flex items-center justify-between ${p ? 'bg-[#1b2150]/60 backdrop-blur-md border-indigo-300/30 text-white' : 'bg-transparent border-dashed border-indigo-300/30 text-slate-500'}`}>
               {p ? (
                 <>
                   <span className="flex items-center gap-1.5">
@@ -207,7 +201,7 @@ const ChoosePicture: React.FC<{ room: MpRoomState; me: MpPlayerView; lang: 'ar' 
         <div className="space-y-1 pt-1">
           <div className="text-[11px] font-black text-slate-400">{ar ? 'في انتظار باقي اللاعبين...' : 'Waiting for the others...'}</div>
           {room.players.map((p) => (
-            <div key={p.id} className="flex items-center justify-between text-xs font-bold bg-[#0F172A] border border-slate-800 rounded-lg px-3 py-1.5 text-slate-200">
+            <div key={p.id} className="flex items-center justify-between text-xs font-bold bg-[#1b2150]/60 backdrop-blur-md border border-indigo-300/20 rounded-lg px-3 py-1.5 text-slate-200">
               <span>{p.name}{!p.connected && ' 📴'}</span>
               <span>{p.hasPicked ? '✅' : '⏳'}</span>
             </div>
@@ -333,7 +327,7 @@ const Arena: React.FC<{ room: MpRoomState; me: MpPlayerView; lang: 'ar' | 'en' }
           {iAmTarget ? (
             <>
               {room.mySecret && (
-                <div className="flex items-center gap-2 p-2 bg-[#0F172A] rounded-xl border border-slate-700">
+                <div className="flex items-center gap-2 p-2 bg-[#1b2150]/60 backdrop-blur-md rounded-xl border border-indigo-300/30">
                   <img src={room.mySecret.imageUrl} alt="" className="w-12 h-12 object-contain" />
                   <div className="text-[11px] font-bold text-slate-300">{ar ? 'صورتك السرية:' : 'Your secret picture:'} <strong className="text-white">{room.mySecret.title}</strong></div>
                 </div>
@@ -345,7 +339,7 @@ const Arena: React.FC<{ room: MpRoomState; me: MpPlayerView; lang: 'ar' | 'en' }
                   </button>
                 ))}
               </div>
-              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={ar ? 'ملاحظة اختيارية...' : 'Optional note...'} className="w-full h-10 bg-[#1E293B] border border-slate-700 rounded-xl px-3 text-xs font-bold text-white placeholder-slate-500 focus:outline-none" />
+              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={ar ? 'ملاحظة اختيارية...' : 'Optional note...'} className="w-full h-10 bg-[#1b2150]/60 border border-indigo-300/30 rounded-xl px-3 text-xs font-bold text-white placeholder-slate-500 focus:outline-none" />
               <button type="button" onClick={() => { onlineService.mpDeclareWin(); setNote(''); }} className="w-full h-12 rounded-2xl font-black text-sm bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 cursor-pointer active:scale-95">
                 {ar ? '🏆 أيوه، كسبت! (خمّن صورتي صح)' : '🏆 Yes, you got it! (guessed my picture)'}
               </button>
@@ -389,7 +383,7 @@ const Arena: React.FC<{ room: MpRoomState; me: MpPlayerView; lang: 'ar' | 'en' }
 
       {/* 3) everybody else only watches the current turn */}
       {!pq && !myTurn && (
-        <div data-testid="watch-turn" className="backdrop-blur-md rounded-[26px] bg-[#1b2150]/60 shadow-[0_0_28px_rgba(99,102,241,0.22)] p-4 border border-slate-700 text-center text-sm font-black text-slate-300">
+        <div data-testid="watch-turn" className="backdrop-blur-md rounded-[26px] bg-[#1b2150]/60 shadow-[0_0_28px_rgba(99,102,241,0.22)] p-4 border border-indigo-300/30 text-center text-sm font-black text-slate-300">
           {turn
             ? (turn.targetId === me.id
                 ? (ar ? `${turn.askerName} هيسألك دلوقتي — جهّز نفسك 🔔` : `${turn.askerName} is about to ask you 🔔`)
@@ -431,7 +425,7 @@ const Arena: React.FC<{ room: MpRoomState; me: MpPlayerView; lang: 'ar' | 'en' }
         <div className="space-y-1.5">
           <div className="text-[11px] font-black text-slate-400">{ar ? 'سجل الأسئلة' : 'History'}</div>
           {room.questions.slice(0, 12).map((q) => (
-            <div key={q.id} className={`p-2.5 rounded-xl border text-xs ${q.wasWinningGuess ? 'bg-emerald-950/40 border-emerald-600/50' : 'bg-[#0F172A] border-slate-800'}`}>
+            <div key={q.id} className={`p-2.5 rounded-xl border text-xs ${q.wasWinningGuess ? 'bg-emerald-950/40 border-emerald-600/50' : 'bg-[#1b2150]/60 backdrop-blur-md border-indigo-300/20'}`}>
               <div className="text-[10px] font-bold text-slate-500">{q.askerName} → {q.targetOwnerName}</div>
               <div className="font-black text-white">{q.question}</div>
               <div className="font-bold text-amber-300">{q.wasWinningGuess ? (ar ? '🏆 تخمين صحيح!' : '🏆 Correct!') : answerLabel(q.answer, lang)}{q.note && q.note !== '🏆' && ` — ${q.note}`}</div>
@@ -460,9 +454,9 @@ const GameOver: React.FC<{ room: MpRoomState; lang: 'ar' | 'en'; onLeave: () => 
     <div className="space-y-4 text-center">
       <div className="text-5xl">🏆</div>
       <h2 className="text-2xl font-black text-white">{ar ? `${sorted[0].name} بطل اللعبة! 🎉` : `${sorted[0].name} wins! 🎉`}</h2>
-      <div className="game-card-surface p-3 border border-slate-700 space-y-2">
+      <div className="game-card-surface p-3 border border-indigo-300/30 space-y-2">
         {sorted.map((p, i) => (
-          <div key={p.id} className={`p-2.5 rounded-xl flex items-center justify-between border text-sm font-black ${i === 0 ? 'bg-amber-500/20 border-amber-400/60 text-white' : 'bg-[#0F172A] border-slate-800 text-slate-300'}`}>
+          <div key={p.id} className={`p-2.5 rounded-xl flex items-center justify-between border text-sm font-black ${i === 0 ? 'bg-amber-500/20 border-amber-400/60 text-white' : 'bg-[#1b2150]/60 backdrop-blur-md border-indigo-300/20 text-slate-300'}`}>
             <span>{['🥇', '🥈', '🥉', '4️⃣'][i]} {p.name}{!p.connected && ' 📴'}</span>
             <span className="text-amber-400">{p.score} {ar ? 'نقاط' : 'pts'}</span>
           </div>
@@ -470,7 +464,7 @@ const GameOver: React.FC<{ room: MpRoomState; lang: 'ar' | 'en'; onLeave: () => 
       </div>
       <div className="grid grid-cols-2 gap-2">
         {room.players.map((p) => p.secret && (
-          <div key={p.id} className="p-2 bg-[#0F172A] rounded-xl border border-slate-800 space-y-1">
+          <div key={p.id} className="p-2 bg-[#1b2150]/60 backdrop-blur-md rounded-xl border border-indigo-300/20 space-y-1">
             <div className="text-[10px] font-bold text-purple-300 truncate">{p.name}</div>
             <img src={p.secret.imageUrl} alt="" className="w-full aspect-square object-contain rounded-lg bg-slate-900/60 p-1" />
             <div className="text-[11px] font-black text-white truncate">{p.secret.title}</div>

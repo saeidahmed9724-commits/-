@@ -220,19 +220,19 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
           </button>
 
           {/* Selected Picture Preview Card or Fallback State */}
-          <div className="bg-[#0F172A] rounded-2xl p-4 border border-slate-700/80 flex flex-col items-center justify-center text-center relative shadow-inner">
+          <div className="bg-[#1b2150]/60 backdrop-blur-md rounded-2xl p-4 border border-slate-700/80 flex flex-col items-center justify-center text-center relative shadow-inner">
             {selectedImage ? (
               <div className="w-full flex flex-col items-center space-y-3">
                 <button
                   type="button"
                   onClick={() => setSelectedImage(null)}
                   title="Remove"
-                  className="absolute top-2.5 end-2.5 w-8 h-8 rounded-xl bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center cursor-pointer border border-slate-700"
+                  className="absolute top-2.5 end-2.5 w-8 h-8 rounded-xl bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center cursor-pointer border border-indigo-300/30"
                 >
                   <X className="w-4 h-4" />
                 </button>
 
-                <div className="w-36 h-36 rounded-2xl overflow-hidden bg-[#1E293B] border border-slate-700 flex items-center justify-center p-2 shadow-md">
+                <div className="w-36 h-36 rounded-2xl overflow-hidden bg-[#1b2150]/60 border border-indigo-300/30 flex items-center justify-center p-2 shadow-md">
                   <img
                     src={selectedImage}
                     alt={selectedTitle}
@@ -251,7 +251,7 @@ export const ChoosePictureScreen: React.FC<ChoosePictureScreenProps> = ({
                     value={selectedTitle}
                     onChange={(e) => setSelectedTitle(e.target.value)}
                     placeholder={lang === 'ar' ? 'اسم العنصر...' : 'Item name...'}
-                    className="w-full bg-[#1E293B] border border-slate-700 focus:border-purple-500 rounded-xl px-3 py-2 text-xs font-bold text-center text-white focus:outline-none"
+                    className="w-full bg-[#1b2150]/60 border border-indigo-300/30 focus:border-purple-500 rounded-xl px-3 py-2 text-xs font-bold text-center text-white focus:outline-none"
                   />
 
                   <button

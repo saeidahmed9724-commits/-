@@ -43,7 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleMic,
 }) => {
   return (
-    <header className="w-full bg-[#0F172A]/90 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40 px-3 py-2.5">
+    <header className="mx-3 mt-3 rounded-[26px] border border-indigo-300/30 bg-[#1b2150]/60 backdrop-blur-md shadow-[0_0_28px_rgba(99,102,241,0.22)] sticky top-3 z-40 px-3 py-2.5">
       <div className="flex items-center justify-between gap-2 max-w-md mx-auto">
         {/* Left Side: Modern Circle Utility Actions */}
         <div className="flex items-center gap-1.5">

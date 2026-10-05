@@ -47,8 +47,8 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-      <div className="game-card-surface border border-slate-700 max-w-md w-full p-6 sm:p-7 shadow-2xl space-y-5 animate-scale-up">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+      <div className="game-card-surface border border-indigo-300/30 max-w-md w-full p-6 sm:p-7 shadow-2xl space-y-5 animate-scale-up">
+        <div className="flex items-center justify-between border-b border-indigo-300/20 pb-3">
           <div className="flex items-center gap-2">
             <KeyRound className="w-5 h-5 text-blue-400" />
             <h3 className="text-xl font-black text-white">
@@ -77,7 +77,7 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               placeholder="A7K92"
               maxLength={7}
-              className="w-full bg-[#0F172A] border border-slate-700 focus:border-amber-400 rounded-xl px-4 py-3 text-2xl font-black font-mono tracking-widest text-amber-400 focus:outline-none text-center"
+              className="w-full bg-[#141a45]/95 border border-indigo-300/30 focus:border-amber-400 rounded-xl px-4 py-3 text-2xl font-black font-mono tracking-widest text-amber-400 focus:outline-none text-center"
             />
           </div>
 
@@ -91,7 +91,7 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={lang === 'ar' ? 'اكتب اسمك...' : 'Enter your name...'}
-              className="w-full bg-[#0F172A] border border-slate-700 focus:border-blue-500 rounded-xl px-4 py-2.5 text-sm font-bold text-white focus:outline-none"
+              className="w-full bg-[#141a45]/95 border border-indigo-300/30 focus:border-blue-500 rounded-xl px-4 py-2.5 text-sm font-bold text-white focus:outline-none"
             />
           </div>
 

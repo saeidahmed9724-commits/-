@@ -55,7 +55,7 @@ export const CreateGameScreen: React.FC<CreateGameScreenProps> = ({
             sound.playCardFlip();
             onBack();
           }}
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white bg-slate-800/80 px-3.5 py-1.5 rounded-xl border border-slate-700 cursor-pointer active:scale-95 transition-colors"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white bg-slate-800/80 px-3.5 py-1.5 rounded-xl border border-indigo-300/30 cursor-pointer active:scale-95 transition-colors"
         >
           <ArrowLeft className={`w-3.5 h-3.5 ${lang === 'ar' ? 'rotate-180' : ''}`} />
           <span>{lang === 'ar' ? 'رجوع' : 'Back'}</span>
@@ -98,7 +98,7 @@ export const CreateGameScreen: React.FC<CreateGameScreenProps> = ({
                   value={playerName}
                   onChange={(e) => setPlayerName(e.target.value)}
                   placeholder={lang === 'ar' ? 'اكتب اسمك هنا...' : 'Enter your name...'}
-                  className="w-full h-12 bg-[#0F172A] border border-slate-700 focus:border-blue-500 rounded-xl ps-4 pe-10 text-sm font-bold text-white placeholder:text-slate-500 focus:outline-none transition-colors"
+                  className="w-full h-12 bg-[#1b2150]/60 backdrop-blur-md border border-indigo-300/30 focus:border-blue-500 rounded-xl ps-4 pe-10 text-sm font-bold text-white placeholder:text-slate-500 focus:outline-none transition-colors"
                 />
                 <User className="w-4 h-4 text-slate-500 absolute end-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
@@ -116,7 +116,7 @@ export const CreateGameScreen: React.FC<CreateGameScreenProps> = ({
                     value={opponentName}
                     onChange={(e) => setOpponentName(e.target.value)}
                     placeholder={lang === 'ar' ? 'اكتب اسم خصمك هنا...' : 'Enter opponent name...'}
-                    className="w-full h-12 bg-[#0F172A] border border-slate-700 focus:border-purple-500 rounded-xl ps-4 pe-10 text-sm font-bold text-white placeholder:text-slate-500 focus:outline-none transition-colors"
+                    className="w-full h-12 bg-[#1b2150]/60 backdrop-blur-md border border-indigo-300/30 focus:border-purple-500 rounded-xl ps-4 pe-10 text-sm font-bold text-white placeholder:text-slate-500 focus:outline-none transition-colors"
                   />
                   <User className="w-4 h-4 text-slate-500 absolute end-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>

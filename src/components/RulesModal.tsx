@@ -14,7 +14,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose, lang })
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
       <div className="game-card-surface border border-slate-700/80 rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl max-h-[90vh] overflow-y-auto space-y-6 animate-scale-up">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className="flex items-center justify-between border-b border-indigo-300/20 pb-3">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-amber-400/15 border border-amber-400/30 text-amber-400 flex items-center justify-center font-bold">
               <HelpCircle className="w-5 h-5" />
@@ -38,7 +38,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose, lang })
         {/* Steps */}
         <div className="space-y-3.5 text-xs sm:text-sm">
           {/* Step 1 */}
-          <div className="p-3.5 bg-[#0F172A] rounded-2xl border border-slate-700/80 space-y-1">
+          <div className="p-3.5 bg-[#141a45]/95 rounded-2xl border border-slate-700/80 space-y-1">
             <div className="font-bold text-white flex items-center gap-2">
               <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-mono">1</span>
               <span>{lang === 'ar' ? 'تصنيف موحد للجولة 🍔 🐾' : 'One Category Per Round'}</span>
@@ -51,7 +51,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose, lang })
           </div>
 
           {/* Step 2 */}
-          <div className="p-3.5 bg-[#0F172A] rounded-2xl border border-slate-700/80 space-y-1">
+          <div className="p-3.5 bg-[#141a45]/95 rounded-2xl border border-slate-700/80 space-y-1">
             <div className="font-bold text-white flex items-center gap-2">
               <span className="w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center text-xs font-mono">2</span>
               <span>{lang === 'ar' ? 'أنت تختار صورة لخصمك 🤫' : 'Pick a Secret Picture for Opponent'}</span>
@@ -64,7 +64,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose, lang })
           </div>
 
           {/* Step 3 */}
-          <div className="p-3.5 bg-[#0F172A] rounded-2xl border border-slate-700/80 space-y-1">
+          <div className="p-3.5 bg-[#141a45]/95 rounded-2xl border border-slate-700/80 space-y-1">
             <div className="font-bold text-white flex items-center gap-2">
               <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-mono">3</span>
               <span>{lang === 'ar' ? 'الخصم يجاوب يدويًا + ملاحظة اختيارية 📝' : 'Opponent Answers Manually + Note'}</span>
@@ -77,7 +77,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose, lang })
           </div>
 
           {/* Step 4 */}
-          <div className="p-3.5 bg-[#0F172A] rounded-2xl border border-slate-700/80 space-y-1">
+          <div className="p-3.5 bg-[#141a45]/95 rounded-2xl border border-slate-700/80 space-y-1">
             <div className="font-bold text-white flex items-center gap-2">
               <span className="w-5 h-5 rounded-full bg-amber-500 text-slate-950 font-black flex items-center justify-center text-xs font-mono">4</span>
               <span>{lang === 'ar' ? 'التخمين وتحكيم الخصم ⚖️' : 'Guessing & Opponent Verdict'}</span>

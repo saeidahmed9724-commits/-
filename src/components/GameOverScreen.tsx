@@ -62,7 +62,7 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
         {/* Scores */}
         <div className="grid grid-cols-2 gap-3 py-1">
           {/* Winner */}
-          <div className="p-3.5 bg-[#0F172A] rounded-2xl border border-amber-500/50 text-center shadow-inner">
+          <div className="p-3.5 bg-[#1b2150]/60 backdrop-blur-md rounded-2xl border border-amber-500/50 text-center shadow-inner">
             <div className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-0.5 truncate">
               {winner.name}
             </div>
@@ -72,7 +72,7 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
           </div>
 
           {/* Loser */}
-          <div className="p-3.5 bg-[#0F172A] rounded-2xl border border-slate-700/80 text-center">
+          <div className="p-3.5 bg-[#1b2150]/60 backdrop-blur-md rounded-2xl border border-slate-700/80 text-center">
             <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5 truncate">
               {loser.name}
             </div>
