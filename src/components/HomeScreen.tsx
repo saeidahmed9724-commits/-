@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { BookOpen, Bot, HelpCircle, Link2, Lock, Play, Settings, Smartphone, Volume2, VolumeX } from 'lucide-react';
 import { sound } from '../utils/audio';
-
-export const HOME_BG_IMAGE_URL =
-  'https://res.cloudinary.com/utefkiln/image/upload/v1790794176/ChatGPT_Image_30_%D8%B3%D8%A8%D8%AA%D9%85%D8%A8%D8%B1_2026_09_47_15_%D9%85_xzytw2.png';
+import { GameLogoBanner } from './GameLogoBanner';
 
 interface HomeScreenProps {
   onCreateOnlineGame: () => void;
@@ -16,6 +15,11 @@ interface HomeScreenProps {
   onToggleSound?: () => void;
 }
 
+const GLASS =
+  'rounded-[26px] border border-indigo-300/30 bg-[#1b2150]/60 backdrop-blur-md shadow-[0_0_28px_rgba(99,102,241,0.22)]';
+const ROUND_BTN =
+  'w-10 h-10 rounded-full bg-indigo-500/20 border border-indigo-300/40 text-white flex items-center justify-center cursor-pointer active:scale-95';
+
 export const HomeScreen: React.FC<HomeScreenProps> = ({
   onCreateOnlineGame,
   onJoinRoom,
@@ -27,230 +31,135 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   soundEnabled = true,
   onToggleSound,
 }) => {
-  const [imageLoaded, setImageLoaded] = useState<boolean>(false);
+  const ar = lang === 'ar';
+  const go = (fn: () => void, chime = false) => () => {
+    chime ? sound.playTurnChime() : sound.playCardFlip();
+    fn();
+  };
 
   return (
-    <div className="w-full flex items-center justify-center min-h-screen py-1 px-1 sm:py-3 sm:px-2 animate-fade-in select-none">
-      {/* Container with exact aspect ratio of the 941x1671 image */}
-      <div className="w-full max-w-[430px] aspect-[941/1671] relative rounded-3xl sm:rounded-[36px] overflow-hidden shadow-2xl bg-[#070D1E] border border-slate-800/80">
-        {/* Placeholder / Shimmer while loading */}
-        {!imageLoaded && (
-          <div className="absolute inset-0 bg-gradient-to-b from-[#0F172A] via-[#1E293B] to-[#070D1E] animate-pulse flex items-center justify-center">
-            <span className="text-sm font-bold text-slate-400">
-              {lang === 'ar' ? 'جاري التحميل...' : 'Loading...'}
-            </span>
-          </div>
-        )}
-
-        {/* 1. Official High-Fidelity Background Image Asset */}
-        <img
-          src={HOME_BG_IMAGE_URL}
-          alt={lang === 'ar' ? 'إيه اللي معايا؟' : 'What Do I Have?'}
-          className={`absolute inset-0 w-full h-full object-cover select-none pointer-events-none transition-opacity duration-300 ${
-            imageLoaded ? 'opacity-100' : 'opacity-0'
-          }`}
-          loading="eager"
-          decoding="async"
-          onLoad={() => setImageLoaded(true)}
-        />
-
-        {/* ========================================================================= */}
-        {/* 2. INTERACTIVE CONTROLS & BUTTON OVERLAYS (EXACT COORDINATES)              */}
-        {/* ========================================================================= */}
-
-        {/* --- Top Bar: Left Game Title Pill --- */}
-        <button
-          type="button"
-          onClick={() => sound.playCardFlip()}
-          title={lang === 'ar' ? 'إيه اللي معايا؟' : 'What Do I Have?'}
-          aria-label="Game Info"
-          className="absolute z-10 cursor-pointer rounded-full transition-all duration-150 active:scale-95 hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-blue-400 outline-none"
-          style={{ top: '2.0%', left: '12.0%', width: '24.2%', height: '4.2%' }}
-        />
-
-        {/* --- Floating Multiplayer Mode Badge: 👥 3-4 لاعبين --- */}
-        {onOpenMultiplayer && (
+    <div className="w-full max-w-[440px] mx-auto px-3 py-3 space-y-3 animate-fade-in select-none">
+      {/* top bar */}
+      <div dir="ltr" className={`${GLASS} px-3 py-2 flex items-center justify-between gap-2`}>
+        <GameLogoBanner size="sm" className="shrink-0" />
+        <div className="flex items-center gap-2">
+          <button type="button" aria-label={ar ? 'طريقة اللعب والمساعدة' : 'Rules & Help'} onClick={go(onOpenRules)} className={ROUND_BTN}>
+            <HelpCircle className="w-5 h-5" />
+          </button>
           <button
             type="button"
+            aria-label={soundEnabled ? (ar ? 'كتم الصوت' : 'Mute') : ar ? 'تشغيل الصوت' : 'Unmute'}
             onClick={() => {
+              onToggleSound?.();
               sound.playTurnChime();
-              onOpenMultiplayer();
             }}
-            title={lang === 'ar' ? 'العب مع 3 أو 4 لاعبين' : 'Play with 3-4 Players'}
-            className="absolute z-20 cursor-pointer rounded-full px-3.5 py-1 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:brightness-110 text-white font-black text-[11px] shadow-xl border border-purple-300/40 hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 animate-pulse"
-            style={{ top: '7.6%', left: '50%', transform: 'translateX(-50%)' }}
+            className={ROUND_BTN}
+          >
+            {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+          </button>
+        </div>
+      </div>
+
+      {/* 3-4 players */}
+      {onOpenMultiplayer && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={go(onOpenMultiplayer, true)}
+            className="px-4 h-9 rounded-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 text-white text-xs font-black border border-purple-300/40 shadow-xl flex items-center gap-1.5 cursor-pointer active:scale-95"
           >
             <span>👥</span>
-            <span>{lang === 'ar' ? 'طور 3–4 لاعبين (جديد!)' : '3-4 Players Mode (New!)'}</span>
+            {ar ? 'طور 3–4 لاعبين' : '3-4 Players Mode'}
           </button>
-        )}
+        </div>
+      )}
 
-        {/* --- Top Bar: Round 1 Pill Indicator --- */}
-        <div
-          title={lang === 'ar' ? 'الجولة 1' : 'Round 1'}
-          className="absolute z-10 rounded-full cursor-default hover:bg-amber-400/10 transition-colors"
-          style={{ top: '2.0%', left: '41.0%', width: '17.2%', height: '4.2%' }}
-        />
-
-        {/* --- Top Bar: Help (?) Button --- */}
-        <button
-          type="button"
-          onClick={() => {
-            sound.playCardFlip();
-            onOpenRules();
+      {/* hero */}
+      <div className={`${GLASS} px-5 py-6 text-center space-y-3`}>
+        <img
+          src="/art/cards-question.webp"
+          alt=""
+          aria-hidden
+          width={176}
+          height={143}
+          className="mx-auto w-44 h-auto drop-shadow-[0_8px_18px_rgba(0,0,0,0.5)]"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
           }}
-          title={lang === 'ar' ? 'طريقة اللعب والمساعدة' : 'Rules & Help'}
-          aria-label="Rules and Help"
-          className="absolute z-10 cursor-pointer rounded-full transition-all duration-150 active:scale-90 hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-purple-400 outline-none"
-          style={{ top: '2.0%', left: '65.5%', width: '7.2%', height: '4.2%' }}
         />
-
-        {/* --- Top Bar: Sound Speaker Button --- */}
-        <button
-          type="button"
-          onClick={() => {
-            if (onToggleSound) {
-              onToggleSound();
-              sound.playTurnChime();
-            }
-          }}
-          title={soundEnabled ? (lang === 'ar' ? 'كتم الصوت' : 'Mute') : (lang === 'ar' ? 'تشغيل الصوت' : 'Unmute')}
-          aria-label="Sound Toggle"
-          className="absolute z-10 cursor-pointer rounded-full transition-all duration-150 active:scale-90 hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-emerald-400 outline-none flex items-center justify-center"
-          style={{ top: '2.0%', left: '74.0%', width: '7.2%', height: '4.2%' }}
-        >
-          {/* Subtle mute indicator overlay when sound is disabled */}
-          {!soundEnabled && (
-            <div className="w-4 h-0.5 bg-rose-500 rounded-full rotate-45 shadow-sm pointer-events-none" />
+        <h1 className="text-2xl font-black text-white leading-snug">
+          {ar ? (
+            <>
+              خمّن <span className="text-amber-400">صورتك المخفية</span>
+            </>
+          ) : (
+            <>
+              Guess your <span className="text-amber-400">hidden picture</span>
+            </>
           )}
+        </h1>
+        <p className="text-sm font-bold text-slate-300">
+          {ar ? 'اسأل أسئلة نعم / لا واكتشف الصورة قبل خصمك' : 'Ask yes / no questions and find the picture before your opponent'}
+        </p>
+      </div>
+
+      {/* main buttons */}
+      <button
+        type="button"
+        onClick={go(onCreateOnlineGame, true)}
+        className="w-full h-16 rounded-2xl bg-gradient-to-b from-amber-300 to-orange-500 text-indigo-950 text-xl font-black flex items-center justify-center gap-2.5 shadow-lg cursor-pointer active:scale-95"
+      >
+        <Play className="w-6 h-6 fill-current" />
+        {ar ? 'ابدأ اللعبة' : 'Start Game'}
+      </button>
+
+      <button
+        type="button"
+        onClick={go(onJoinRoom, true)}
+        className="w-full h-16 rounded-2xl bg-gradient-to-b from-blue-500 to-violet-600 border border-white/30 text-white text-xl font-black flex items-center justify-center gap-2.5 shadow-lg cursor-pointer active:scale-95"
+      >
+        <Link2 className="w-6 h-6" />
+        {ar ? 'انضم بكود' : 'Join with Code'}
+      </button>
+
+      {/* secondary buttons */}
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={go(onPlayWithAI, true)}
+          className={`${GLASS} h-16 px-2 text-white text-sm font-black flex items-center justify-center gap-2 cursor-pointer active:scale-95`}
+        >
+          <Bot className="w-5 h-5 text-sky-300 shrink-0" />
+          {ar ? 'ضد الروبوت' : 'Solo vs Bot'}
         </button>
-
-        {/* --- Top Bar: Gear / Settings Button --- */}
         <button
           type="button"
-          onClick={() => {
-            sound.playCardFlip();
-            onOpenRules();
-          }}
-          title={lang === 'ar' ? 'الإعدادات والقواعد' : 'Settings & Rules'}
-          aria-label="Settings"
-          className="absolute z-10 cursor-pointer rounded-full transition-all duration-150 active:scale-90 hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-blue-400 outline-none"
-          style={{ top: '2.0%', left: '82.5%', width: '7.2%', height: '4.2%' }}
-        />
+          onClick={go(onPlayOffline, true)}
+          className={`${GLASS} h-16 px-2 text-white text-sm font-black leading-tight flex items-center justify-center gap-2 cursor-pointer active:scale-95`}
+        >
+          <Smartphone className="w-5 h-5 text-emerald-300 shrink-0" />
+          {ar ? 'لاعبين بجهاز واحد' : 'Pass & Play (1 Device)'}
+        </button>
+      </div>
 
-        {/* --- Interactive Preview Card: Opponent's Burger --- */}
-        <button
-          type="button"
-          onClick={() => sound.playCardFlip()}
-          title={lang === 'ar' ? 'صورة خصمك المكشوفة' : "Opponent's Photo"}
-          aria-label="Opponent Card Preview"
-          className="absolute z-10 cursor-pointer rounded-2xl transition-all duration-150 active:scale-95 hover:bg-white/10 outline-none"
-          style={{ top: '43.5%', left: '16.0%', width: '28.0%', height: '18.0%' }}
-        />
-
-        {/* --- Interactive Preview Card: Your Hidden Card --- */}
-        <button
-          type="button"
-          onClick={() => sound.playTurnChime()}
-          title={lang === 'ar' ? 'صورتك المخفية التي يجب أن تخمنها!' : 'Your Secret Hidden Card'}
-          aria-label="Secret Card Preview"
-          className="absolute z-10 cursor-pointer rounded-2xl transition-all duration-150 active:scale-95 hover:bg-amber-400/10 outline-none"
-          style={{ top: '43.5%', left: '56.0%', width: '28.0%', height: '18.0%' }}
-        />
-
-        {/* --- Primary CTA 1: ابدأ اللعبة (Start Game) --- */}
-        <button
-          type="button"
-          onClick={() => {
-            sound.playTurnChime();
-            onCreateOnlineGame();
-          }}
-          title={lang === 'ar' ? 'ابدأ اللعبة' : 'Start Game'}
-          aria-label={lang === 'ar' ? 'ابدأ اللعبة' : 'Start Game'}
-          className="absolute z-10 cursor-pointer rounded-[28px] sm:rounded-[32px] transition-all duration-150 active:scale-[0.98] hover:bg-amber-400/15 active:bg-amber-600/20 focus-visible:ring-4 focus-visible:ring-amber-400/50 outline-none"
-          style={{ top: '63.7%', left: '13.4%', width: '73.2%', height: '6.1%' }}
-        />
-
-        {/* --- Primary CTA 2: وضع لاعبين (جهاز واحد) (Two Players - 1 Device) --- */}
-        <button
-          type="button"
-          onClick={() => {
-            sound.playTurnChime();
-            onPlayOffline();
-          }}
-          title={lang === 'ar' ? 'وضع لاعبين (جهاز واحد)' : 'Pass & Play (1 Device)'}
-          aria-label={lang === 'ar' ? 'وضع لاعبين (جهاز واحد)' : 'Pass & Play (1 Device)'}
-          className="absolute z-10 cursor-pointer rounded-[28px] sm:rounded-[32px] transition-all duration-150 active:scale-[0.98] hover:bg-purple-400/15 active:bg-purple-700/20 focus-visible:ring-4 focus-visible:ring-purple-400/50 outline-none"
-          style={{ top: '70.8%', left: '13.4%', width: '73.2%', height: '6.0%' }}
-        />
-
-        {/* --- Secondary CTA 1: ضد الروبوت (Solo vs Robot) --- */}
-        <button
-          type="button"
-          onClick={() => {
-            sound.playTurnChime();
-            onPlayWithAI();
-          }}
-          title={lang === 'ar' ? 'ضد الروبوت' : 'Solo vs Bot'}
-          aria-label={lang === 'ar' ? 'ضد الروبوت' : 'Solo vs Bot'}
-          className="absolute z-10 cursor-pointer rounded-2xl transition-all duration-150 active:scale-[0.96] hover:bg-black/5 active:bg-black/15 focus-visible:ring-4 focus-visible:ring-emerald-400/50 outline-none"
-          style={{ top: '78.0%', left: '13.4%', width: '35.6%', height: '5.4%' }}
-        />
-
-        {/* --- Secondary CTA 2: انضم بكود (Join with Code) --- */}
-        <button
-          type="button"
-          onClick={() => {
-            sound.playCardFlip();
-            onJoinRoom();
-          }}
-          title={lang === 'ar' ? 'انضم بكود' : 'Join with Code'}
-          aria-label={lang === 'ar' ? 'انضم بكود' : 'Join with Code'}
-          className="absolute z-10 cursor-pointer rounded-2xl transition-all duration-150 active:scale-[0.96] hover:bg-black/5 active:bg-black/15 focus-visible:ring-4 focus-visible:ring-blue-400/50 outline-none"
-          style={{ top: '78.0%', left: '51.1%', width: '35.5%', height: '5.4%' }}
-        />
-
-        {/* --- Footer Nav 1: الإعدادات والقواعد (Settings & Rules) --- */}
-        <button
-          type="button"
-          onClick={() => {
-            sound.playCardFlip();
-            onOpenRules();
-          }}
-          title={lang === 'ar' ? 'الإعدادات والقواعد' : 'Settings & Rules'}
-          aria-label={lang === 'ar' ? 'الإعدادات والقواعد' : 'Settings & Rules'}
-          className="absolute z-10 cursor-pointer rounded-2xl transition-all duration-150 active:scale-[0.93] hover:bg-blue-400/15 active:bg-blue-600/25 outline-none"
-          style={{ top: '84.6%', left: '16.0%', width: '22.0%', height: '7.6%' }}
-        />
-
-        {/* --- Footer Nav 2: غرفة خاصة (Private Room) --- */}
-        <button
-          type="button"
-          onClick={() => {
-            sound.playTurnChime();
-            onCreateOnlineGame();
-          }}
-          title={lang === 'ar' ? 'غرفة خاصة' : 'Private Room'}
-          aria-label={lang === 'ar' ? 'غرفة خاصة' : 'Private Room'}
-          className="absolute z-10 cursor-pointer rounded-2xl transition-all duration-150 active:scale-[0.93] hover:bg-purple-400/15 active:bg-purple-600/25 outline-none"
-          style={{ top: '84.6%', left: '42.0%', width: '16.0%', height: '7.6%' }}
-        />
-
-        {/* --- Footer Nav 3: طريقة اللعب (How to Play) --- */}
-        <button
-          type="button"
-          onClick={() => {
-            sound.playCardFlip();
-            onOpenRules();
-          }}
-          title={lang === 'ar' ? 'طريقة اللعب' : 'How to Play'}
-          aria-label={lang === 'ar' ? 'طريقة اللعب' : 'How to Play'}
-          className="absolute z-10 cursor-pointer rounded-2xl transition-all duration-150 active:scale-[0.93] hover:bg-blue-400/15 active:bg-blue-600/25 outline-none"
-          style={{ top: '84.6%', left: '65.0%', width: '22.0%', height: '7.6%' }}
-        />
+      {/* footer nav */}
+      <div className={`${GLASS} grid grid-cols-3 py-2`}>
+        {[
+          { icon: <Settings className="w-5 h-5" />, label: ar ? 'الإعدادات والقواعد' : 'Settings & Rules', fn: onOpenRules },
+          { icon: <Lock className="w-5 h-5" />, label: ar ? 'غرفة خاصة' : 'Private Room', fn: onCreateOnlineGame },
+          { icon: <BookOpen className="w-5 h-5" />, label: ar ? 'طريقة اللعب' : 'How to Play', fn: onOpenRules },
+        ].map((n) => (
+          <button
+            key={n.label}
+            type="button"
+            onClick={go(n.fn)}
+            className="py-2 text-slate-200 text-[11px] font-black flex flex-col items-center gap-1 cursor-pointer active:scale-95"
+          >
+            {n.icon}
+            {n.label}
+          </button>
+        ))}
       </div>
     </div>
   );
 };
-
-
