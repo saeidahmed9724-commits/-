@@ -3,6 +3,7 @@ import { Player, PlayerChoice, QuestionRecord, CategoryDefinition, AnswerType, P
 import { sound } from '../utils/audio';
 import { isCorrectGuess } from '../utils/normalize';
 import { VoiceChatBar, useJoinVoice } from './VoiceChatBar';
+import { HiddenCard } from './HiddenCard';
 import {
   Send,
   Check,
@@ -149,6 +150,17 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
   const isMyTurnToAsk = isOnlineMatch
     ? (onlineRole === 'host' ? activePlayerId === player1.id : activePlayerId === player2.id) && !pendingQuestionRemote
     : viewerId === activePlayerId && !pendingQuestionLocal;
+
+  // When a question arrives for ME to answer, bring the answer panel into view (the duel stage is tall on phones).
+  const actionZoneRef = useRef<HTMLDivElement | null>(null);
+  const pendingForMeKey = activeQuestionText && isReceiverOfPendingQuestion ? activeQuestionText : '';
+  useEffect(() => {
+    if (!pendingForMeKey) return;
+    const t = window.setTimeout(() => {
+      actionZoneRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 150);
+    return () => window.clearTimeout(t);
+  }, [pendingForMeKey]);
 
   const viewerIsP1 = viewerId === player1.id;
   const viewerName = viewerIsP1 ? player1.name : player2.name;
@@ -332,50 +344,103 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
         </div>
       )}
 
-      {/* 1. TOP MOBILE MATCH HEADER */}
-      <div className="game-card-surface p-3 border border-slate-700/60 flex items-center justify-between">
-        {/* P1 Score Badge */}
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-xs shadow-sm">
-            1
+      {/* 1. MATCH BAR: round + category */}
+      <div className="flex items-center justify-between px-1">
+        <div className="px-3 py-1 bg-[#0F172A] border border-slate-700/80 rounded-full text-[11px] font-bold text-slate-300 font-mono">
+          {lang === 'ar' ? `جولة ${roundNumber}` : `Round ${roundNumber}`}
+        </div>
+        {category?.icon && (
+          <div className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
+            <span>{category.icon}</span>
+            <span>{lang === 'ar' ? category.nameAr : category.nameEn}</span>
           </div>
-          <div>
-            <div className="text-xs font-bold text-slate-200 truncate max-w-[65px]">{player1.name}</div>
-            <div className="text-sm font-black font-mono text-blue-400 leading-none">{player1.score}</div>
+        )}
+      </div>
+
+      {/* 2. THE DUEL STAGE: you (hidden card) VS your opponent (visible card), scores under the names */}
+      <div data-testid="duel-stage" className="relative rounded-3xl border border-slate-700/60 bg-gradient-to-b from-[#121B36] to-[#0A1124] p-3 sm:p-4 shadow-xl">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4">
+          {/* YOU */}
+          <div className="flex flex-col items-center gap-2 min-w-0">
+            <div className="w-full flex items-center justify-between gap-2 px-1">
+              <div className="min-w-0">
+                <div className="text-xs font-black text-white truncate">{viewerName}</div>
+                <div className="text-[10px] font-bold text-blue-300">{lang === 'ar' ? 'أنت' : 'You'}</div>
+              </div>
+              <div data-testid="score-me" className="shrink-0 min-w-9 h-9 px-2 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black font-mono text-base shadow">
+                {viewerIsP1 ? player1.score : player2.score}
+              </div>
+            </div>
+
+            <HiddenCard
+              label={lang === 'ar' ? 'صورتك المخفية' : 'Your hidden picture'}
+              active={viewerId === activePlayerId}
+            />
+
+            <div className="text-[11px] font-bold text-amber-300 flex items-center gap-1">
+              <span>{lang === 'ar' ? 'صورتك المخفية' : 'YOUR HIDDEN CARD'}</span>
+              <span className="text-[10px]">🔒</span>
+            </div>
+          </div>
+
+          {/* OPPONENT */}
+          <div className="flex flex-col items-center gap-2 min-w-0">
+            <div className="w-full flex items-center justify-between gap-2 px-1">
+              <div data-testid="score-foe" className="shrink-0 min-w-9 h-9 px-2 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black font-mono text-base shadow">
+                {viewerIsP1 ? player2.score : player1.score}
+              </div>
+              <div className="min-w-0 text-end">
+                <div className="text-xs font-black text-white truncate">{opponentName}</div>
+                <div className="text-[10px] font-bold text-purple-300">{lang === 'ar' ? 'الخصم' : 'Opponent'}</div>
+              </div>
+            </div>
+
+            <div
+              className={`relative w-full aspect-[2/3] rounded-[22px] p-[3px] bg-gradient-to-br from-blue-500 via-purple-500 to-orange-400 transition-all duration-300 ${
+                viewerId !== activePlayerId
+                  ? 'ring-4 ring-amber-300/80 shadow-[0_0_30px_rgba(251,191,36,0.45)] scale-[1.02]'
+                  : 'shadow-[0_0_22px_rgba(139,92,246,0.35)]'
+              }`}
+            >
+              <div className="w-full h-full rounded-[19px] bg-[#0F172A] flex items-center justify-center p-2 overflow-hidden">
+                {hideOpponentCard ? (
+                  <div className="text-center p-3 text-slate-400 font-bold text-xs">
+                    <EyeOff className="w-7 h-7 mx-auto mb-1 text-slate-500" />
+                    <span className="text-[10px]">{lang === 'ar' ? 'محجوبة مؤقتاً' : 'Hidden'}</span>
+                  </div>
+                ) : (
+                  <img
+                    src={visibleOpponentCard.imageUrl}
+                    alt={visibleOpponentCard.title}
+                    className="w-full h-full object-contain drop-shadow-md rounded-xl"
+                  />
+                )}
+              </div>
+            </div>
+
+            <div className="text-[11px] font-bold text-blue-300 flex items-center gap-1 max-w-full">
+              <span className="truncate">{lang === 'ar' ? `صورة ${opponentName}` : `${opponentName}'s card`}</span>
+              {!isOnlineMatch && (
+                <button
+                  type="button"
+                  onClick={() => setHideOpponentCard(!hideOpponentCard)}
+                  title="Privacy Shield"
+                  className="p-0.5 text-slate-400 hover:text-slate-200 cursor-pointer shrink-0"
+                >
+                  {hideOpponentCard ? <EyeOff className="w-3.5 h-3.5 text-rose-400" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Center Round & Category Pill */}
-        <div className="flex flex-col items-center">
-          <div className="px-3 py-1 bg-[#0F172A] border border-slate-700/80 rounded-full text-[11px] font-bold text-slate-300 font-mono">
-            {lang === 'ar' ? `جولة ${roundNumber}` : `Round ${roundNumber}`}
-          </div>
-        </div>
-
-        {/* P2 Score Badge */}
-        <div className="flex items-center gap-2">
-          <div className="text-end">
-            <div className="text-xs font-bold text-slate-200 truncate max-w-[65px]">{player2.name}</div>
-            <div className="text-sm font-black font-mono text-purple-400 leading-none">{player2.score}</div>
-          </div>
-          <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black text-xs shadow-sm">
-            2
+        {/* VS badge between the two cards */}
+        <div className="absolute top-1/2 start-1/2 -translate-x-1/2 rtl:translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none">
+          <div className="w-10 h-10 rounded-full bg-[#0F172A] border-2 border-amber-400/70 text-amber-300 font-black flex items-center justify-center shadow-lg shadow-black/50">
+            <span className="font-mono tracking-tight text-[12px]">VS</span>
           </div>
         </div>
       </div>
-
-      {/* 1B. ONLINE VOICE CHAT BAR — the only microphone in the game. Independent from turns. */}
-      {isOnlineMatch && onlineRole && (
-        <VoiceChatBar
-          lang={lang}
-          selfId={myVoiceId}
-          selfName={viewerName}
-          players={[
-            { id: myVoiceId, name: viewerName },
-            { id: otherVoiceId, name: opponentName },
-          ]}
-        />
-      )}
 
       {/* 2. TURN CALLOUT BANNER (Clearly stating whose turn it is to ask about their card) */}
       <div
@@ -401,68 +466,18 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
         </span>
       </div>
 
-      {/* 3. HERO SECTION: THE TWO DISTINCT DEDUCTION CARDS */}
-      <div className="game-card-surface p-4 sm:p-5 border border-slate-700/60 relative">
-        <div className="grid grid-cols-2 gap-3 items-center relative">
-          {/* CARD 1: صورتك المخفية */}
-          <div className="flex flex-col items-center text-center">
-            <div className="text-[11px] font-bold text-amber-400 mb-1.5 flex items-center gap-1">
-              <span>{lang === 'ar' ? 'صورتك المخفية' : 'YOUR CARD'}</span>
-              <span className="text-[10px]">🔒</span>
-            </div>
-
-            <div className="w-full aspect-[3/4] rounded-2xl bg-gradient-to-br from-[#1E293B] via-[#0F172A] to-[#020617] border border-amber-500/40 text-white flex flex-col items-center justify-center shadow-xl p-3 relative group transition-transform active:scale-98">
-              <span className="font-mono font-black text-5xl sm:text-6xl text-amber-400 drop-shadow-md">
-                ?
-              </span>
-              <span className="absolute bottom-2 text-[9px] font-mono tracking-widest text-slate-400 font-bold uppercase">
-                {lang === 'ar' ? 'مخفية عنك' : 'HIDDEN'}
-              </span>
-            </div>
-          </div>
-
-          {/* CENTER "VS" BADGE */}
-          <div className="absolute top-1/2 start-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex items-center justify-center pointer-events-none">
-            <div className="w-9 h-9 rounded-full bg-[#0F172A] border border-slate-700 text-slate-300 font-black text-xs flex items-center justify-center shadow-lg">
-              <span className="font-mono tracking-tight text-[11px]">VS</span>
-            </div>
-          </div>
-
-          {/* CARD 2: صورة الخصم */}
-          <div className="flex flex-col items-center text-center">
-            <div className="text-[11px] font-bold text-blue-400 mb-1.5 flex items-center gap-1 justify-center w-full">
-              <span className="truncate max-w-[100px]">
-                {lang === 'ar' ? `صورة ${opponentName}` : `${opponentName}'s Card`}
-              </span>
-              {!isOnlineMatch && (
-                <button
-                  type="button"
-                  onClick={() => setHideOpponentCard(!hideOpponentCard)}
-                  title="Privacy Shield"
-                  className="p-0.5 text-slate-400 hover:text-slate-200 cursor-pointer"
-                >
-                  {hideOpponentCard ? <EyeOff className="w-3.5 h-3.5 text-rose-400" /> : <Eye className="w-3.5 h-3.5" />}
-                </button>
-              )}
-            </div>
-
-            <div className="w-full aspect-[3/4] rounded-2xl bg-[#0F172A] border border-blue-500/40 flex items-center justify-center shadow-xl p-3 overflow-hidden relative group transition-transform active:scale-98">
-              {hideOpponentCard ? (
-                <div className="text-center p-3 text-slate-400 font-bold text-xs">
-                  <EyeOff className="w-7 h-7 mx-auto mb-1 text-slate-500" />
-                  <span className="text-[10px]">{lang === 'ar' ? 'محجوبة مؤقتاً' : 'Hidden'}</span>
-                </div>
-              ) : (
-                <img
-                  src={visibleOpponentCard.imageUrl}
-                  alt={visibleOpponentCard.title}
-                  className="w-full h-full object-contain drop-shadow-md rounded-xl"
-                />
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* 1B. ONLINE VOICE CHAT BAR — the only microphone in the game. Independent from turns. */}
+      {isOnlineMatch && onlineRole && (
+        <VoiceChatBar
+          lang={lang}
+          selfId={myVoiceId}
+          selfName={viewerName}
+          players={[
+            { id: myVoiceId, name: viewerName },
+            { id: otherVoiceId, name: opponentName },
+          ]}
+        />
+      )}
 
       {/* 4. PRIMARY LATEST ANSWER BANNER (Prominent part of the active gameplay view) */}
       {latestQuestionRecord && !activeQuestionText && (
@@ -535,7 +550,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
       )}
 
       {/* 5. CURRENT ACTION ZONE */}
-      <div className="game-card-surface p-4 border border-slate-700/60 space-y-3">
+      <div ref={actionZoneRef} className="game-card-surface p-4 border border-slate-700/60 space-y-3 scroll-mt-3">
         {/* PASS & PLAY HANDOFF INTERSTITIAL */}
         {!isOnlineMatch && !isBotMatch && passAndPlayHandoff && activeQuestionText && (
           <div className="p-4 bg-[#0F172A] border border-purple-500/40 rounded-2xl text-center space-y-3 animate-scale-up">
