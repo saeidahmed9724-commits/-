@@ -22,9 +22,11 @@ interface VoiceChatBarProps {
   selfId: string;
   selfName: string;
   players: { id: string; name: string }[]; // everyone in the room (including me)
+  /** Neon look used on the playing screen. */
+  neon?: boolean;
 }
 
-export const VoiceChatBar: React.FC<VoiceChatBarProps> = ({ lang, selfId, selfName, players }) => {
+export const VoiceChatBar: React.FC<VoiceChatBarProps> = ({ lang, selfId, selfName, players, neon = false }) => {
   const voice = useVoiceChat();
   const [micError, setMicError] = useState<string | null>(null);
   const ar = lang === 'ar';
@@ -67,6 +69,31 @@ export const VoiceChatBar: React.FC<VoiceChatBarProps> = ({ lang, selfId, selfNa
         ? `🎙️ ${others.find((p) => voice.peers[p.id]?.speaking)!.name} يتكلم...`
         : `🎙️ ${others.find((p) => voice.peers[p.id]?.speaking)!.name} is speaking...`
       : null;
+
+  if (neon) {
+    const sub = speakingNow ?? (voice.micOn ? (ar ? 'المايك مفتوح' : 'Mic is on') : ar ? 'المايك مقفول — لسه بتسمع الآخرين' : 'Mic is off — you can still hear others');
+    const label = voice.state === 'connected' ? (ar ? 'متصل' : 'Connected') : voice.state === 'error' ? (ar ? 'تعذر الاتصال' : 'Failed') : voice.state === 'reconnecting' ? (ar ? 'جاري إعادة الاتصال' : 'Reconnecting') : ar ? 'جاري التوصيل' : 'Connecting';
+    return (
+      <div className="rounded-[26px] border border-indigo-400/30 bg-[#1b2150]/60 backdrop-blur-md shadow-[0_0_28px_rgba(99,102,241,0.22)] p-3 space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 text-start">
+            <div className="flex items-center gap-2 text-lg font-black text-white"><span className={`w-4 h-4 rounded-full shrink-0 ${dot}`} />{label}</div>
+            <div className="text-[11px] leading-snug font-bold text-indigo-200/80">{sub}</div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {voice.state === 'error' && (
+              <button type="button" onClick={() => liveVoiceManager.retry()} className="px-3 py-3 rounded-2xl text-xs font-black bg-amber-600 text-white cursor-pointer active:scale-95">{ar ? 'إعادة المحاولة' : 'Retry'}</button>
+            )}
+            <button type="button" onClick={toggleMic} className={`px-5 py-3 rounded-2xl text-base font-black flex items-center gap-2 cursor-pointer active:scale-95 shadow-lg text-white border ${voice.micOn ? 'bg-gradient-to-b from-rose-500 to-rose-700 border-rose-300/60' : 'bg-gradient-to-b from-emerald-400 to-emerald-600 border-emerald-200/60'}`}>
+              {voice.micOn ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+              <span>{voice.micOn ? (ar ? 'قفل المايك' : 'Mic off') : ar ? 'فتح المايك' : 'Mic on'}</span>
+            </button>
+          </div>
+        </div>
+        {micError && <div className="text-[11px] font-bold text-rose-300 text-center">{micError}</div>}
+      </div>
+    );
+  }
 
   return (
     <div className="p-3 bg-gradient-to-r from-[#0F172A] via-[#1E293B] to-[#0F172A] border-2 border-slate-700/90 rounded-2xl shadow-md space-y-2">

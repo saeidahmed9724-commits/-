@@ -553,7 +553,7 @@ export default function App() {
       {/* Main Mobile App Container */}
       <div className="w-full max-w-[440px] min-h-screen sm:min-h-[860px] bg-[#0F172A] sm:rounded-[36px] sm:shadow-2xl sm:border sm:border-slate-800/80 overflow-y-auto flex flex-col relative z-10">
         {/* Top Header (shown on gameplay, lobby, setup, and reveal screens) */}
-        {gamePhase !== 'HOME' && gamePhase !== 'JOIN_GAME' && (
+        {gamePhase !== 'HOME' && gamePhase !== 'JOIN_GAME' && !(gamePhase === 'MP_ONLINE' && mpRoom?.phase === 'PLAYING') && (
           <Header
             scoreP1={player1.score}
             scoreP2={player2.score}
@@ -734,7 +734,7 @@ export default function App() {
 
         {/* 9. ONLINE MULTIPLAYER (3–4 players, each on their own device) */}
         {gamePhase === 'MP_ONLINE' && (
-          <OnlineMultiplayerGame room={mpRoom} onLeave={handleBackToHome} lang={lang} />
+          <OnlineMultiplayerGame room={mpRoom} onLeave={handleBackToHome} lang={lang} onOpenRules={() => setIsRulesOpen(true)} soundEnabled={soundEnabled} onToggleSound={() => setSoundEnabled(!soundEnabled)} />
         )}
       </main>
 

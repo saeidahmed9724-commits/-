@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import confetti from 'canvas-confetti';
-import { Check, Copy, Crown, Link2, Send } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, Copy, Crown, Eye, HelpCircle, Info, Link2, Send, Volume2, VolumeX } from 'lucide-react';
+import { GameLogoBanner } from './GameLogoBanner';
 import { AnswerType, MpPlayerView, MpRoomState } from '../types/game';
 import { onlineService } from '../services/onlineGame';
 import { sound } from '../utils/audio';
@@ -17,6 +18,9 @@ interface Props {
   room: MpRoomState | null;
   onLeave: () => void;
   lang: 'ar' | 'en';
+  onOpenRules?: () => void;
+  soundEnabled?: boolean;
+  onToggleSound?: () => void;
 }
 
 const ANSWERS: { id: AnswerType; ar: string; en: string; cls: string }[] = [
@@ -30,7 +34,7 @@ const answerLabel = (a: AnswerType, lang: 'ar' | 'en') => {
   return lang === 'ar' ? x.ar : x.en;
 };
 
-export const OnlineMultiplayerGame: React.FC<Props> = ({ room, onLeave, lang }) => {
+export const OnlineMultiplayerGame: React.FC<Props> = ({ room, onLeave, lang, onOpenRules, soundEnabled = true, onToggleSound }) => {
   const ar = lang === 'ar';
   const meId = room?.meId ?? onlineService.mpPlayerId;
   const me = room?.players.find((p) => p.id === room.meId);
@@ -46,9 +50,20 @@ export const OnlineMultiplayerGame: React.FC<Props> = ({ room, onLeave, lang }) 
     );
   }
 
+  const neon = room.phase === 'PLAYING';
   return (
-    <div className="w-full max-w-md mx-auto flex flex-col gap-3 pb-6 select-none animate-scale-up">
+    <div style={neon ? NEON_BG_STYLE : undefined} className={`w-full max-w-md mx-auto flex flex-col gap-3 pb-6 select-none animate-scale-up ${neon ? NEON_BG + ' p-3 rounded-[28px]' : ''}`}>
+      {neon && (
+        <NeonTopBar
+          round={Math.floor(room.questions.length / Math.max(1, room.players.length)) + 1}
+          ar={ar}
+          soundEnabled={soundEnabled}
+          onOpenRules={onOpenRules}
+          onToggleSound={onToggleSound}
+        />
+      )}
       <VoiceChatBar
+        neon={neon}
         lang={lang}
         selfId={room.meId}
         selfName={me.name}
@@ -61,6 +76,33 @@ export const OnlineMultiplayerGame: React.FC<Props> = ({ room, onLeave, lang }) 
     </div>
   );
 };
+
+
+// ----------------------------------------------------------------------------------------
+// Neon look (the playing screen)
+// ----------------------------------------------------------------------------------------
+const NEON_BG = 'min-h-[calc(100dvh-1rem)] bg-cover bg-center bg-[#0b1030]';
+const NEON_BG_STYLE: React.CSSProperties = {
+  // dark veil keeps the text readable; the gradient underneath is the fallback if the image fails to load
+  backgroundImage:
+    'linear-gradient(rgba(8,10,32,0.28), rgba(10,8,34,0.50)), url(/art/bg-living-room.webp), linear-gradient(180deg,#0b1030,#140d33 55%,#1a1030)',
+};
+const GLASS = 'rounded-[26px] border border-indigo-400/30 bg-[#1b2150]/60 backdrop-blur-md shadow-[0_0_28px_rgba(99,102,241,0.22)]';
+const AVATARS = ['👩', '🧔', '👨', '🧑'];
+
+const NeonTopBar: React.FC<{ round: number; ar: boolean; soundEnabled: boolean; onOpenRules?: () => void; onToggleSound?: () => void }> = ({ round, ar, soundEnabled, onOpenRules, onToggleSound }) => (
+  <div dir="ltr" className={`${GLASS} px-3 py-2 flex items-center justify-between gap-2`}>
+    <GameLogoBanner size="sm" className="shrink-0" />
+    <div className="px-4 py-2 rounded-full bg-indigo-500/20 border border-indigo-300/30 text-sm font-black text-white flex items-center gap-2">
+      <span className="w-3 h-3 rounded-full bg-amber-400" />
+      {ar ? `الجولة ${round}` : `Round ${round}`}
+    </div>
+    <div className="flex items-center gap-2">
+      <button type="button" aria-label={ar ? 'القواعد' : 'Rules'} onClick={onOpenRules} className="w-10 h-10 rounded-full bg-indigo-500/20 border border-indigo-300/40 text-white flex items-center justify-center cursor-pointer active:scale-95"><HelpCircle className="w-5 h-5" /></button>
+      <button type="button" aria-label={ar ? 'الصوت' : 'Sound'} onClick={onToggleSound} className="w-10 h-10 rounded-full bg-indigo-500/20 border border-indigo-300/40 text-white flex items-center justify-center cursor-pointer active:scale-95">{soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}</button>
+    </div>
+  </div>
+);
 
 // ----------------------------------------------------------------------------------------
 // Lobby
@@ -251,12 +293,18 @@ const Arena: React.FC<{ room: MpRoomState; me: MpPlayerView; lang: 'ar' | 'en' }
 
   return (
     <div className="space-y-3">
-      {/* scores */}
-      <div className="flex gap-1.5 overflow-x-auto pb-1">
-        {room.players.map((p) => (
-          <div key={p.id} className={`px-3 py-1.5 rounded-2xl border text-xs font-black flex items-center gap-2 shrink-0 ${p.id === room.activePlayerId ? 'bg-purple-600/30 border-purple-500 text-white ring-2 ring-purple-400' : 'bg-[#0F172A] border-slate-800 text-slate-300'} ${!p.connected ? 'opacity-50' : ''}`}>
-            <span className="truncate max-w-[80px]">{p.name}{p.id === me.id && (ar ? ' (أنت)' : ' (you)')}{!p.connected && ' 📴'}</span>
-            <span className="px-1.5 py-0.5 rounded-md bg-black/40 text-amber-400 font-mono text-[11px]">{p.score}/{totalTargets}</span>
+      {/* players: avatar, name, score bar (the active player is highlighted) */}
+      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${room.players.length}, minmax(0, 1fr))` }}>
+        {[...room.players.slice(room.players.findIndex((x) => x.id === me.id)), ...room.players.slice(0, room.players.findIndex((x) => x.id === me.id))].map((p, idx) => (
+          <div key={p.id} className={`p-2 rounded-2xl border flex items-center gap-2 min-w-0 backdrop-blur-md ${p.id === room.activePlayerId ? 'bg-indigo-500/25 border-violet-400 ring-2 ring-violet-500/70 shadow-[0_0_18px_rgba(139,92,246,0.55)]' : 'bg-[#1b2150]/60 border-indigo-300/20'} ${!p.connected ? 'opacity-50' : ''}`}>
+            <div className="w-9 h-9 rounded-full shrink-0 bg-gradient-to-br from-amber-300 to-pink-500 flex items-center justify-center text-lg border-2 border-white/70">{AVATARS[idx % AVATARS.length]}</div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] leading-tight font-black text-white break-words">{p.name}{p.id === me.id && (ar ? ' (أنت)' : ' (you)')}{!p.connected && ' 📴'}</div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[12px] font-black text-amber-300 font-mono">{p.score}/{totalTargets}</span>
+                <div className="h-2 flex-1 rounded-full bg-slate-900/70 overflow-hidden"><div className="h-full rounded-full bg-gradient-to-r from-sky-400 to-blue-600" style={{ width: `${Math.max(6, (p.score / Math.max(1, totalTargets)) * 100)}%` }} /></div>
+              </div>
+            </div>
           </div>
         ))}
       </div>
@@ -276,7 +324,7 @@ const Arena: React.FC<{ room: MpRoomState; me: MpPlayerView; lang: 'ar' | 'en' }
 
       {/* 1) a question is waiting for its owner */}
       {pq && (
-        <div className="game-card-surface p-4 border border-amber-500/50 space-y-3">
+        <div className="backdrop-blur-md rounded-[26px] bg-[#1b2150]/60 shadow-[0_0_28px_rgba(99,102,241,0.22)] p-4 border border-amber-500/50 space-y-3">
           <div className="text-[11px] font-black text-amber-300">
             {ar ? `${pq.askerName} بيسأل ${pq.targetOwnerName}:` : `${pq.askerName} asks ${pq.targetOwnerName}:`}
           </div>
@@ -318,25 +366,29 @@ const Arena: React.FC<{ room: MpRoomState; me: MpPlayerView; lang: 'ar' | 'en' }
 
       {/* 2) my turn: the game tells me whom to ask (no choice) */}
       {!pq && myTurn && myTarget && (
-        <div data-testid="ask-panel" className="game-card-surface p-4 border border-purple-500/50 space-y-3">
-          <div className="text-sm font-black text-white">{ar ? 'دورك الآن 🎯' : 'Your turn 🎯'}</div>
-          <div data-testid="assigned-target" className="p-3 rounded-2xl bg-purple-600/25 border-2 border-purple-500 text-center">
-            <div className="text-[11px] font-bold text-purple-200">{ar ? 'اللعبة حددت لك تسأل:' : 'The game assigned you to ask:'}</div>
-            <div className="text-lg font-black text-white">{myTarget.name}</div>
-            <div className="text-[10px] font-bold text-slate-400 mt-0.5">{ar ? 'الأدوار إجبارية وبالتساوي — مفيش اختيار' : 'Turns are mandatory and equal — no choice'}</div>
+        <div data-testid="ask-panel" className="p-4 border border-indigo-300/30 space-y-4 backdrop-blur-md rounded-[26px] bg-[#1b2150]/60 shadow-[0_0_28px_rgba(99,102,241,0.22)]">
+          <div className="text-center text-2xl font-black text-white">{ar ? 'دورك الآن 🎯' : 'Your turn 🎯'}</div>
+          <div data-testid="assigned-target" className="p-3 rounded-3xl bg-violet-600/20 border border-violet-400/60 flex items-center gap-4">
+            <img src="/art/cards-question.webp" alt="" aria-hidden width={96} height={78} className="w-24 h-auto shrink-0 drop-shadow-[0_6px_14px_rgba(0,0,0,0.5)]" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+            <div className="min-w-0 flex-1 text-center">
+              <div className="text-sm font-bold text-violet-200">{ar ? 'اللعبة حددت لك تسأل:' : 'The game assigned you to ask:'}</div>
+              <div className="text-3xl font-black text-amber-400 truncate">{myTarget.name}</div>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <input autoFocus value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} placeholder={ar ? `اكتب سؤالك لـ ${myTarget.name}...` : `Type your question for ${myTarget.name}...`} className="flex-1 h-12 bg-[#070D1E] border border-slate-700 focus:border-blue-500 rounded-xl px-3 text-sm text-white font-bold placeholder-slate-500 focus:outline-none" />
-            <button type="button" disabled={!text.trim()} onClick={send} className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white flex items-center justify-center disabled:opacity-40 cursor-pointer active:scale-95">
-              <Send className="w-5 h-5" />
-            </button>
+          <div className="flex gap-2 p-2 rounded-2xl bg-slate-950/40 border border-indigo-300/20">
+            <input autoFocus value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} placeholder={ar ? `اكتب سؤالك لـ ${myTarget.name}...` : `Type your question for ${myTarget.name}...`} className="flex-1 min-w-0 h-14 bg-[#0a1030] border-2 border-blue-500/70 focus:border-blue-400 rounded-xl px-3 text-base text-white font-bold placeholder-slate-400 focus:outline-none" />
+            <button type="button" aria-label={ar ? 'إرسال' : 'Send'} disabled={!text.trim()} onClick={send} className="w-16 h-14 rounded-xl bg-gradient-to-b from-amber-300 to-orange-500 text-indigo-950 flex items-center justify-center disabled:opacity-60 cursor-pointer active:scale-95 shadow-lg"><Send className="w-7 h-7" /></button>
+          </div>
+          <div className="flex items-center justify-center gap-2 text-xs font-bold text-slate-300">
+            <Info className="w-4 h-4 text-sky-400 shrink-0" />
+            {ar ? 'اللاعب المستهدف بيتحدد تلقائيًا من اللعبة' : 'The target player is chosen automatically by the game'}
           </div>
         </div>
       )}
 
       {/* 3) everybody else only watches the current turn */}
       {!pq && !myTurn && (
-        <div data-testid="watch-turn" className="game-card-surface p-4 border border-slate-700 text-center text-sm font-black text-slate-300">
+        <div data-testid="watch-turn" className="backdrop-blur-md rounded-[26px] bg-[#1b2150]/60 shadow-[0_0_28px_rgba(99,102,241,0.22)] p-4 border border-slate-700 text-center text-sm font-black text-slate-300">
           {turn
             ? (turn.targetId === me.id
                 ? (ar ? `${turn.askerName} هيسألك دلوقتي — جهّز نفسك 🔔` : `${turn.askerName} is about to ask you 🔔`)
@@ -363,12 +415,13 @@ const Arena: React.FC<{ room: MpRoomState; me: MpPlayerView; lang: 'ar' | 'en' }
 
       {/* my own picture (private) */}
       {room.mySecret && (
-        <button type="button" onClick={() => setShowMine((v) => !v)} className="w-full p-2 rounded-xl bg-[#0F172A] border border-slate-800 text-[11px] font-bold text-slate-400 cursor-pointer text-center">
+        <button type="button" onClick={() => setShowMine((v) => !v)} className="w-full px-4 py-3.5 rounded-2xl backdrop-blur-md bg-[#1b2150]/60 border border-indigo-300/30 text-base font-black text-indigo-100 cursor-pointer flex items-center justify-between gap-3">
           {showMine ? (
-            <span className="inline-flex items-center gap-2 text-slate-200"><img src={room.mySecret.imageUrl} alt="" className="w-8 h-8 object-contain" />{room.mySecret.title}</span>
+            <span className="inline-flex items-center gap-2 text-white"><img src={room.mySecret.imageUrl} alt="" className="w-9 h-9 object-contain" />{room.mySecret.title}</span>
           ) : (
-            ar ? '👁️ اعرض صورتي السرية' : '👁️ Show my secret picture'
+            <span className="inline-flex items-center gap-3"><Eye className="w-6 h-6" />{ar ? 'اعرض صورتي السرية' : 'Show my secret picture'}</span>
           )}
+          {showMine ? <ChevronDown className="w-5 h-5 shrink-0" /> : <ChevronLeft className="w-5 h-5 shrink-0" />}
         </button>
       )}
 
