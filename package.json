@@ -11,7 +11,9 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test:mp": "node tests/mp-rules.mjs",
-    "test:search": "tsx tests/image-search.test.ts"
+    "test:search": "tsx tests/image-search.test.ts",
+    "test:turns": "node --import tsx --test tests/turn-schedule.test.ts",
+    "test": "npm run test:turns && npm run test:mp"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

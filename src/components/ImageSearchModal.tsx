@@ -158,12 +158,12 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-xs animate-fade-in">
       <div
-        className="w-full max-w-[440px] h-[92vh] max-h-[820px] bg-[#0F172A] border border-slate-700/80 rounded-3xl flex flex-col overflow-hidden animate-scale-up shadow-2xl"
+        className="w-full max-w-[440px] h-[92vh] max-h-[820px] bg-[#141a45]/95 border border-slate-700/80 rounded-3xl flex flex-col overflow-hidden animate-scale-up shadow-2xl"
         role="dialog"
         aria-modal="true"
       >
         {/* Top Header */}
-        <div className="p-4 bg-[#0F172A] border-b border-slate-800 flex items-center justify-between shrink-0">
+        <div className="p-4 bg-[#141a45]/95 border-b border-indigo-300/20 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-400 flex items-center justify-center font-bold text-lg shadow-sm">
               🔍
@@ -189,7 +189,7 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
         </div>
 
         {/* Search Input Bar */}
-        <div className="p-3 bg-[#0F172A] border-b border-slate-800 shrink-0 space-y-2.5">
+        <div className="p-3 bg-[#141a45]/95 border-b border-indigo-300/20 shrink-0 space-y-2.5">
           <form onSubmit={handleFormSubmit} className="flex gap-2 items-center">
             <div className="relative flex-1">
               <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -203,7 +203,7 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
                     ? 'ابحث عن أي شيء...'
                     : 'Search for anything...'
                 }
-                className="w-full h-12 bg-[#1E293B] border border-slate-700 focus:border-blue-500 rounded-xl ps-9 pe-8 text-xs font-bold text-white placeholder:text-slate-500 focus:outline-none transition-colors shadow-inner"
+                className="w-full h-12 bg-[#141a45]/95 border border-indigo-300/30 focus:border-blue-500 rounded-xl ps-9 pe-8 text-xs font-bold text-white placeholder:text-slate-500 focus:outline-none transition-colors shadow-inner"
               />
               {query && (
                 <button
@@ -256,7 +256,7 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
 
           {/* Empty / No Results State */}
           {!loading && hasSearched && validResults.length === 0 && (
-            <div className="py-10 px-4 bg-[#1E293B] rounded-2xl border border-slate-700 text-center space-y-3">
+            <div className="py-10 px-4 bg-[#141a45]/95 rounded-2xl border border-indigo-300/30 text-center space-y-3">
               <div className="w-12 h-12 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center mx-auto">
                 <AlertCircle className="w-6 h-6" />
               </div>
@@ -274,7 +274,7 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
           {/* Initial Pre-Search Prompt */}
           {!loading && !hasSearched && (
             <div className="py-12 px-4 text-center space-y-3">
-              <div className="w-14 h-14 rounded-2xl bg-[#1E293B] border border-slate-700 flex items-center justify-center mx-auto text-2xl shadow-sm">
+              <div className="w-14 h-14 rounded-2xl bg-[#141a45]/95 border border-indigo-300/30 flex items-center justify-center mx-auto text-2xl shadow-sm">
                 🖼️
               </div>
               <h4 className="text-sm font-black text-white">
@@ -308,7 +308,7 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
                       key={item.id}
                       type="button"
                       onClick={() => handleSelectItem(item)}
-                      className={`relative aspect-square rounded-2xl overflow-hidden bg-[#1E293B] border-2 transition-all cursor-pointer group active:scale-95 ${
+                      className={`relative aspect-square rounded-2xl overflow-hidden bg-[#141a45]/95 border-2 transition-all cursor-pointer group active:scale-95 ${
                         isSelected
                           ? 'border-amber-400 ring-4 ring-amber-400/20 shadow-md scale-102 z-10'
                           : 'border-slate-700/80 hover:border-slate-500'
@@ -389,7 +389,7 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
           {selectedItem && (
             <div
               ref={previewRef}
-              className="bg-[#1E293B] rounded-2xl p-4 border border-amber-400/60 shadow-xl space-y-3 animate-slide-up"
+              className="bg-[#141a45]/95 rounded-2xl p-4 border border-amber-400/60 shadow-xl space-y-3 animate-slide-up"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
@@ -403,7 +403,7 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
 
               <div className="flex gap-3 items-center">
                 {/* Image Thumbnail Preview */}
-                <div className="w-20 h-20 rounded-xl overflow-hidden bg-[#0F172A] border border-slate-700 shrink-0 p-1 flex items-center justify-center shadow-xs">
+                <div className="w-20 h-20 rounded-xl overflow-hidden bg-[#141a45]/95 border border-indigo-300/30 shrink-0 p-1 flex items-center justify-center shadow-xs">
                   <img
                     src={selectedItem.thumbUrl}
                     alt={selectedItem.title}
@@ -434,7 +434,7 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
                     value={itemTitle}
                     onChange={(e) => setItemTitle(e.target.value)}
                     placeholder={lang === 'ar' ? 'اسم العنصر...' : 'Item name...'}
-                    className="w-full bg-[#0F172A] border border-slate-700 focus:border-amber-400 rounded-xl px-3 py-1.5 text-xs font-bold text-white focus:outline-none"
+                    className="w-full bg-[#141a45]/95 border border-indigo-300/30 focus:border-amber-400 rounded-xl px-3 py-1.5 text-xs font-bold text-white focus:outline-none"
                   />
                   <p className="text-[10px] text-slate-400 font-medium truncate">
                     {lang === 'ar'
@@ -459,7 +459,7 @@ export const ImageSearchModal: React.FC<ImageSearchModalProps> = ({
         </div>
 
         {/* Footer info note */}
-        <div className="p-2.5 bg-[#0F172A] border-t border-slate-800 text-center text-[10px] text-slate-400 font-medium shrink-0">
+        <div className="p-2.5 bg-[#141a45]/95 border-t border-indigo-300/20 text-center text-[10px] text-slate-400 font-medium shrink-0">
           {lang === 'ar'
             ? '🔒 الصورة محفوظة بسرية تامة ولن يراها خصمك إطلاقاً حتى تنتهي الجولة'
             : '🔒 Picture is top secret and hidden from your opponent until round ends'}

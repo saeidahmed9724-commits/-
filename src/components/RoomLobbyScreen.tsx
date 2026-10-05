@@ -74,7 +74,7 @@ export const RoomLobbyScreen: React.FC<RoomLobbyScreenProps> = ({
             sound.playCardFlip();
             onBack();
           }}
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white bg-slate-800/80 px-3.5 py-1.5 rounded-xl border border-slate-700 cursor-pointer active:scale-95 transition-colors"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white bg-slate-800/80 px-3.5 py-1.5 rounded-xl border border-indigo-300/30 cursor-pointer active:scale-95 transition-colors"
         >
           <ArrowLeft className={`w-3.5 h-3.5 ${lang === 'ar' ? 'rotate-180' : ''}`} />
           <span>{lang === 'ar' ? 'رجوع' : 'Back'}</span>
@@ -98,7 +98,7 @@ export const RoomLobbyScreen: React.FC<RoomLobbyScreenProps> = ({
         </div>
 
         {/* Big Code Container */}
-        <div className="bg-[#0F172A] rounded-2xl p-4 border border-slate-700/80 space-y-3 shadow-inner">
+        <div className="bg-[#1b2150]/60 backdrop-blur-md rounded-2xl p-4 border border-slate-700/80 space-y-3 shadow-inner">
           <div className="flex items-center justify-center gap-3">
             <span className="text-4xl font-black text-amber-400 font-mono tracking-widest select-all">
               {roomCode}
@@ -107,7 +107,7 @@ export const RoomLobbyScreen: React.FC<RoomLobbyScreenProps> = ({
               type="button"
               onClick={handleCopyCode}
               title="Copy"
-              className="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-xl border border-slate-700 cursor-pointer"
+              className="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-xl border border-indigo-300/30 cursor-pointer"
             >
               {copiedCode ? <Check className="w-5 h-5 text-emerald-400" /> : <Copy className="w-5 h-5" />}
             </button>
@@ -159,7 +159,7 @@ export const RoomLobbyScreen: React.FC<RoomLobbyScreenProps> = ({
                 return (
                   <div
                     key={p.id || idx}
-                    className="bg-[#0F172A] border border-slate-700/80 rounded-2xl p-2.5 sm:p-3 flex items-center justify-between"
+                    className="bg-[#1b2150]/60 backdrop-blur-md border border-slate-700/80 rounded-2xl p-2.5 sm:p-3 flex items-center justify-between"
                   >
                     <div className="flex items-center gap-2.5">
                       <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs border ${badgeColor}`}>
@@ -184,7 +184,7 @@ export const RoomLobbyScreen: React.FC<RoomLobbyScreenProps> = ({
                     <div className="flex items-center gap-1.5">
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                         p.isMuted
-                          ? 'bg-slate-800 text-slate-400 border-slate-700'
+                          ? 'bg-slate-800 text-slate-400 border-indigo-300/30'
                           : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 animate-pulse'
                       }`}>
                         {p.isMuted ? (lang === 'ar' ? 'مايك مقفول 🔇' : 'Muted 🔇') : (lang === 'ar' ? 'مايك شغال 🎙️' : 'Live Mic 🎙️')}
@@ -196,7 +196,7 @@ export const RoomLobbyScreen: React.FC<RoomLobbyScreenProps> = ({
             ) : (
               // Fallback 2-player lobby view
               <>
-                <div className="bg-[#0F172A] border border-blue-500/30 rounded-2xl p-3 flex items-center justify-between">
+                <div className="bg-[#1b2150]/60 backdrop-blur-md border border-blue-500/30 rounded-2xl p-3 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs">
                       👤
@@ -213,7 +213,7 @@ export const RoomLobbyScreen: React.FC<RoomLobbyScreenProps> = ({
                   </div>
                 </div>
 
-                <div className="bg-[#0F172A] border border-purple-500/30 rounded-2xl p-3 flex items-center justify-between">
+                <div className="bg-[#1b2150]/60 backdrop-blur-md border border-purple-500/30 rounded-2xl p-3 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold text-xs">
                       👤
@@ -237,7 +237,7 @@ export const RoomLobbyScreen: React.FC<RoomLobbyScreenProps> = ({
               Array.from({ length: roomData.maxPlayers - roomData.players.length }).map((_, slotIdx) => (
                 <div
                   key={`empty-${slotIdx}`}
-                  className="bg-[#0F172A]/50 border-2 border-dashed border-slate-700/60 rounded-2xl p-2.5 sm:p-3 flex items-center justify-between text-slate-500 animate-pulse"
+                  className="bg-[#1b2150]/50 backdrop-blur-md border-2 border-dashed border-slate-700/60 rounded-2xl p-2.5 sm:p-3 flex items-center justify-between text-slate-500 animate-pulse"
                 >
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-xl bg-slate-800 text-slate-500 flex items-center justify-center font-bold text-xs">
@@ -257,7 +257,7 @@ export const RoomLobbyScreen: React.FC<RoomLobbyScreenProps> = ({
         </div>
 
         {/* Auto-start notification box */}
-        <div className="border border-slate-700/80 bg-[#0F172A] rounded-2xl p-3 text-xs text-slate-400 font-medium flex items-center justify-center gap-2">
+        <div className="border border-slate-700/80 bg-[#1b2150]/60 backdrop-blur-md rounded-2xl p-3 text-xs text-slate-400 font-medium flex items-center justify-center gap-2">
           <Wifi className="w-4 h-4 text-blue-400 animate-pulse" />
           <span>
             {roomData?.maxPlayers && roomData.maxPlayers > 2

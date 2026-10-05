@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { ArrowLeft, ClipboardPaste, HelpCircle, KeyRound, Link2, Play, User, Volume2, VolumeX } from 'lucide-react';
 import { sound } from '../utils/audio';
-
-export const JOIN_GAME_BG_URL =
-  'https://res.cloudinary.com/utefkiln/image/upload/v1790795454/ChatGPT_Image_30_%D8%B3%D8%A8%D8%AA%D9%85%D8%A8%D8%B1_2026_09_59_58_%D9%85_jjoqje.png';
+import { GameLogoBanner } from './GameLogoBanner';
 
 interface JoinGameScreenProps {
   initialCode?: string;
@@ -14,6 +13,9 @@ interface JoinGameScreenProps {
   onToggleSound?: () => void;
   onOpenRules?: () => void;
 }
+
+/** Room codes are always 5 characters (the server and the app both generate 5). */
+const CODE_LEN = 5;
 
 export const JoinGameScreen: React.FC<JoinGameScreenProps> = ({
   initialCode = '',
@@ -29,13 +31,13 @@ export const JoinGameScreen: React.FC<JoinGameScreenProps> = ({
   const [playerName, setPlayerName] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [imageLoaded, setImageLoaded] = useState<boolean>(false);
+  const codeInputRef = useRef<HTMLInputElement>(null);
 
   const handlePasteCode = async () => {
     try {
       const text = await navigator.clipboard.readText();
       if (text) {
-        const cleaned = text.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+        const cleaned = text.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LEN);
         if (cleaned) {
           setCode(cleaned);
           sound.playCardFlip();
@@ -47,7 +49,7 @@ export const JoinGameScreen: React.FC<JoinGameScreenProps> = ({
   };
 
   const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LEN);
     setCode(val);
     if (errorMessage) setErrorMessage(null);
   };
@@ -96,196 +98,75 @@ export const JoinGameScreen: React.FC<JoinGameScreenProps> = ({
     }
   };
 
-  // Convert code to individual character slots (6 slots)
-  const codeChars = code.padEnd(6, ' ').slice(0, 6).split('');
+  const ar = lang === 'ar';
+  const slots = code.padEnd(CODE_LEN, ' ').slice(0, CODE_LEN).split('');
+  const nextEmpty = Math.min(code.length, CODE_LEN - 1);
+  const roundBtn = 'w-10 h-10 rounded-full bg-indigo-500/20 border border-indigo-300/40 text-white flex items-center justify-center cursor-pointer active:scale-95';
 
   return (
-    <div className="w-full flex items-center justify-center min-h-screen py-1 px-1 sm:py-3 sm:px-2 animate-fade-in select-none">
-      {/* Container with exact aspect ratio of the 899x1748 image */}
-      <div className="w-full max-w-[430px] aspect-[899/1748] relative rounded-3xl sm:rounded-[36px] overflow-hidden shadow-2xl bg-[#070D1E] border border-slate-800/80">
-        {/* Placeholder / Shimmer while loading */}
-        {!imageLoaded && (
-          <div className="absolute inset-0 bg-gradient-to-b from-[#0F172A] via-[#1E293B] to-[#070D1E] animate-pulse flex items-center justify-center">
-            <span className="text-sm font-bold text-slate-400">
-              {lang === 'ar' ? 'جاري التحميل...' : 'Loading...'}
-            </span>
+    <div className="w-full max-w-[440px] mx-auto px-3 py-3 space-y-3 animate-fade-in">
+      {/* top bar */}
+      <div dir="ltr" className="rounded-[26px] border border-indigo-300/30 bg-[#1b2150]/60 backdrop-blur-md shadow-[0_0_28px_rgba(99,102,241,0.22)] px-3 py-2 flex items-center justify-between gap-2">
+        <GameLogoBanner size="sm" className="shrink-0" />
+        <div className="flex items-center gap-2">
+          <button type="button" aria-label={ar ? 'القواعد' : 'Rules'} onClick={() => { sound.playCardFlip(); onOpenRules?.(); }} className={roundBtn}><HelpCircle className="w-5 h-5" /></button>
+          <button type="button" aria-label={ar ? 'الصوت' : 'Sound'} onClick={() => { onToggleSound?.(); sound.playTurnChime(); }} className={roundBtn}>{soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}</button>
+        </div>
+      </div>
+
+      {/* back */}
+      <button type="button" onClick={() => { sound.playCardFlip(); onBack(); }} className="px-5 h-11 rounded-full border border-indigo-300/30 bg-[#1b2150]/60 backdrop-blur-md text-white text-sm font-black flex items-center gap-2 cursor-pointer active:scale-95">
+        <ArrowLeft className={`w-4 h-4 ${ar ? 'rotate-180' : ''}`} />
+        {ar ? 'رجوع' : 'Back'}
+      </button>
+
+      <form onSubmit={handleSubmit} className="rounded-[26px] border border-indigo-300/30 bg-[#1b2150]/60 backdrop-blur-md shadow-[0_0_28px_rgba(99,102,241,0.22)] p-5 space-y-5">
+        <div className="text-center space-y-2">
+          <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600 border border-white/30 shadow-lg flex items-center justify-center rotate-6"><Link2 className="w-9 h-9 text-white" /></div>
+          <h1 className="text-3xl font-black text-white">{ar ? <>انضمام <span className="text-amber-400">بكود الغرفة</span></> : <>Join <span className="text-amber-400">with a room code</span></>}</h1>
+          <p className="text-sm font-bold text-slate-300">{ar ? 'أدخل كود الغرفة الذي أرسله لك صديقك' : 'Enter the room code your friend sent you'}</p>
+        </div>
+
+        {/* name */}
+        <label className="block space-y-1.5">
+          <span className="block text-sm font-black text-white">{ar ? 'اسمك' : 'Your name'}</span>
+          <div className="flex items-center gap-2 h-12 px-3 rounded-2xl bg-[#0a1030]/80 border border-indigo-300/30 focus-within:border-blue-400">
+            <User className="w-5 h-5 text-slate-400 shrink-0" />
+            <input value={playerName} onChange={(e) => setPlayerName(e.target.value)} maxLength={24} autoComplete="off" placeholder={ar ? 'اكتب اسمك هنا...' : 'Enter your name...'} className="flex-1 min-w-0 bg-transparent text-white font-bold text-base outline-none border-none placeholder:text-slate-500" />
           </div>
-        )}
+        </label>
 
-        {/* 1. Official High-Fidelity Background Image Asset */}
-        <img
-          src={JOIN_GAME_BG_URL}
-          alt={lang === 'ar' ? 'انضمام بكود الغرفة' : 'Join with Room Code'}
-          className={`absolute inset-0 w-full h-full object-cover select-none pointer-events-none transition-opacity duration-300 ${
-            imageLoaded ? 'opacity-100' : 'opacity-0'
-          }`}
-          loading="eager"
-          decoding="async"
-          onLoad={() => setImageLoaded(true)}
-        />
-
-        {/* ========================================================================= */}
-        {/* 2. TOP BAR CONTROLS                                                       */}
-        {/* ========================================================================= */}
-
-        {/* Help (?) Button */}
-        <button
-          type="button"
-          onClick={() => {
-            sound.playCardFlip();
-            onOpenRules?.();
-          }}
-          title={lang === 'ar' ? 'طريقة اللعب والمساعدة' : 'Rules & Help'}
-          aria-label="Rules and Help"
-          className="absolute z-10 cursor-pointer rounded-full transition-all duration-150 active:scale-90 hover:bg-white/20 outline-none"
-          style={{ top: '1.8%', left: '63.7%', width: '8.2%', height: '4.2%' }}
-        />
-
-        {/* Sound Speaker Button */}
-        <button
-          type="button"
-          onClick={() => {
-            if (onToggleSound) {
-              onToggleSound();
-              sound.playTurnChime();
-            }
-          }}
-          title={soundEnabled ? (lang === 'ar' ? 'كتم الصوت' : 'Mute') : (lang === 'ar' ? 'تشغيل الصوت' : 'Unmute')}
-          aria-label="Sound Toggle"
-          className="absolute z-10 cursor-pointer rounded-full transition-all duration-150 active:scale-90 hover:bg-white/20 outline-none flex items-center justify-center"
-          style={{ top: '1.8%', left: '73.7%', width: '8.2%', height: '4.2%' }}
-        >
-          {!soundEnabled && (
-            <div className="w-4 h-0.5 bg-rose-500 rounded-full rotate-45 shadow-sm pointer-events-none" />
-          )}
-        </button>
-
-        {/* Settings Button */}
-        <button
-          type="button"
-          onClick={() => {
-            sound.playCardFlip();
-            onOpenRules?.();
-          }}
-          title={lang === 'ar' ? 'الإعدادات والقواعد' : 'Settings & Rules'}
-          aria-label="Settings"
-          className="absolute z-10 cursor-pointer rounded-full transition-all duration-150 active:scale-90 hover:bg-white/20 outline-none"
-          style={{ top: '1.8%', left: '83.7%', width: '8.2%', height: '4.2%' }}
-        />
-
-        {/* ========================================================================= */}
-        {/* 3. BACK BUTTON (< رجوع)                                                   */}
-        {/* ========================================================================= */}
-        <button
-          type="button"
-          onClick={() => {
-            sound.playCardFlip();
-            onBack();
-          }}
-          title={lang === 'ar' ? 'رجوع' : 'Back'}
-          aria-label={lang === 'ar' ? 'رجوع' : 'Back'}
-          className="absolute z-10 cursor-pointer rounded-full transition-all duration-150 active:scale-95 hover:bg-white/15 outline-none"
-          style={{ top: '7.8%', left: '7.8%', width: '21.2%', height: '3.8%' }}
-        />
-
-        {/* ========================================================================= */}
-        {/* 4. FORM INTERACTIVE CONTROLS OVERLAYS                                     */}
-        {/* ========================================================================= */}
-        <form onSubmit={handleSubmit}>
-          {/* Name Input Field (اكتب اسمك هنا...) */}
-          <div
-            className="absolute z-10 flex items-center px-4"
-            style={{ top: '45.3%', left: '11.3%', width: '77.4%', height: '5.5%' }}
-          >
-            <input
-              type="text"
-              value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
-              placeholder={lang === 'ar' ? 'اكتب اسمك هنا...' : 'Enter your name...'}
-              className="w-full h-full bg-transparent text-white font-bold text-sm sm:text-base outline-none placeholder:text-slate-500/70 border-none px-2 focus:ring-0"
-              dir={lang === 'ar' ? 'rtl' : 'ltr'}
-            />
+        {/* code */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-black text-white">{ar ? 'كود الغرفة' : 'Room code'}</span>
+            <button type="button" onClick={handlePasteCode} className="px-3 h-9 rounded-xl bg-blue-500/20 border border-blue-400/50 text-blue-200 text-xs font-black flex items-center gap-1.5 cursor-pointer active:scale-95"><ClipboardPaste className="w-4 h-4" />{ar ? 'لصق الكود' : 'Paste code'}</button>
           </div>
-
-          {/* Paste Code Button (لصق الكود) */}
-          <button
-            type="button"
-            onClick={handlePasteCode}
-            title={lang === 'ar' ? 'لصق الكود' : 'Paste Code'}
-            aria-label={lang === 'ar' ? 'لصق الكود' : 'Paste Code'}
-            className="absolute z-10 cursor-pointer rounded-xl transition-all duration-150 active:scale-95 hover:bg-white/10 outline-none"
-            style={{ top: '53.0%', left: '11.4%', width: '24.1%', height: '3.9%' }}
-          />
-
-          {/* 6-Slot Code Input Boxes */}
-          <div
-            className="absolute z-10 flex items-center justify-between cursor-text"
-            style={{ top: '59.2%', left: '11.3%', width: '77.4%', height: '7.3%' }}
-          >
-            {/* Real hidden text input capturing keystrokes */}
-            <input
-              type="text"
-              value={code}
-              onChange={handleCodeChange}
-              maxLength={6}
-              autoFocus
-              className="absolute inset-0 w-full h-full opacity-0 cursor-text z-20"
-            />
-
-            {/* Individual Slot Characters Rendering Over Image's Slot Boxes */}
-            <div className="w-full h-full flex items-center justify-around px-2 pointer-events-none">
-              {codeChars.map((char, idx) => (
-                <div
-                  key={idx}
-                  className="flex-1 flex items-center justify-center font-mono font-black text-xl sm:text-2xl text-amber-400 drop-shadow-md select-none"
-                >
-                  {char.trim() ? char : ''}
+          <div dir="ltr" className="relative" onClick={() => codeInputRef.current?.focus()}>
+            <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${CODE_LEN}, minmax(0, 1fr))` }}>
+              {slots.map((ch, i) => (
+                <div key={i} className={`h-14 rounded-xl border-2 flex items-center justify-center text-2xl font-black text-white bg-[#0a1030]/80 ${i === nextEmpty && code.length < CODE_LEN ? 'border-blue-400 shadow-[0_0_12px_rgba(96,165,250,0.6)]' : 'border-indigo-300/30'}`}>
+                  {ch.trim() || <span className="text-slate-600 text-base">•</span>}
                 </div>
               ))}
             </div>
+            <input ref={codeInputRef} value={code} onChange={handleCodeChange} maxLength={CODE_LEN} aria-label={ar ? 'كود الغرفة' : 'Room code'} autoCapitalize="characters" autoCorrect="off" autoComplete="off" spellCheck={false} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
           </div>
+          <p className="text-xs font-bold text-slate-400 text-center">{ar ? `الكود يتكون من ${CODE_LEN} أرقام أو أحرف` : `The code is ${CODE_LEN} letters or digits`}</p>
+        </div>
 
-          {/* Error Message Toast Overlay */}
-          {errorMessage && (
-            <div
-              className="absolute z-20 px-3 py-1.5 bg-rose-950/90 border border-rose-500/80 rounded-xl text-[11px] font-bold text-rose-200 shadow-xl flex items-center justify-center text-center animate-shake"
-              style={{ top: '67.8%', left: '11.3%', width: '77.4%' }}
-            >
-              <span>{errorMessage}</span>
-            </div>
-          )}
+        {errorMessage && <div role="alert" className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/60 text-rose-200 text-sm font-bold text-center">{errorMessage}</div>}
 
-          {/* Main CTA Button: انضم إلى اللعبة */}
-          <button
-            type="submit"
-            disabled={isLoading}
-            title={lang === 'ar' ? 'انضم إلى اللعبة' : 'Join Game'}
-            aria-label={lang === 'ar' ? 'انضم إلى اللعبة' : 'Join Game'}
-            className="absolute z-10 cursor-pointer rounded-[28px] sm:rounded-[32px] transition-all duration-150 active:scale-[0.98] hover:bg-amber-400/20 active:bg-amber-600/30 focus-visible:ring-4 focus-visible:ring-amber-400/50 outline-none flex items-center justify-center"
-            style={{ top: '72.9%', left: '11.3%', width: '77.4%', height: '7.5%' }}
-          >
-            {isLoading && (
-              <span className="font-bold text-sm text-slate-900 bg-amber-400/80 px-4 py-1.5 rounded-full shadow-md animate-pulse">
-                {lang === 'ar' ? 'جاري الاتصال...' : 'Connecting...'}
-              </span>
-            )}
-          </button>
-        </form>
+        <button type="submit" disabled={isLoading} className="w-full h-14 rounded-2xl bg-gradient-to-b from-amber-300 to-orange-500 text-indigo-950 text-lg font-black flex items-center justify-center gap-2 shadow-lg cursor-pointer active:scale-95 disabled:opacity-60">
+          {isLoading ? (ar ? 'جاري الانضمام...' : 'Joining...') : (<><Play className="w-5 h-5 fill-current" />{ar ? 'انضم إلى اللعبة' : 'Join the game'}</>)}
+        </button>
 
-        {/* Footer Link: ليس لديك كود؟ إنشاء لعبة جديدة */}
-        <button
-          type="button"
-          onClick={() => {
-            sound.playTurnChime();
-            onCreateNewGame();
-          }}
-          title={lang === 'ar' ? 'إنشاء لعبة جديدة' : 'Create New Game'}
-          aria-label={lang === 'ar' ? 'إنشاء لعبة جديدة' : 'Create New Game'}
-          className="absolute z-10 cursor-pointer rounded-xl transition-all duration-150 active:scale-95 hover:bg-amber-400/10 outline-none"
-          style={{ top: '83.5%', left: '20.0%', width: '60.0%', height: '3.5%' }}
-        />
-      </div>
+        <div className="text-center text-sm font-bold text-slate-300 flex items-center justify-center gap-2">
+          <KeyRound className="w-4 h-4 text-amber-400" />
+          {ar ? 'ليس لديك كود؟' : "Don't have a code?"}
+          <button type="button" onClick={() => { sound.playCardFlip(); onCreateNewGame(); }} className="text-amber-400 font-black underline cursor-pointer">{ar ? 'إنشاء لعبة جديدة' : 'Create a new game'}</button>
+        </div>
+      </form>
     </div>
   );
 };
-

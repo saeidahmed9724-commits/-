@@ -228,8 +228,9 @@ class OnlineGameService {
   mpSubmitPicture(imageUrl: string, title: string) {
     this.send({ type: 'MP_SUBMIT_PICTURE', imageUrl, title });
   }
-  mpAsk(targetId: string, question: string) {
-    this.send({ type: 'MP_ASK', targetId, question });
+  /** The server decides who is asked (the turn schedule); the question always goes to the assigned target. */
+  mpAsk(question: string) {
+    this.send({ type: 'MP_ASK', question });
   }
   mpAnswer(answer: AnswerType, note?: string) {
     this.send({ type: 'MP_ANSWER', answer, note });

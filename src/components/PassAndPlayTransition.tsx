@@ -42,7 +42,7 @@ export const PassAndPlayTransition: React.FC<PassAndPlayTransitionProps> = ({
           </p>
         </div>
 
-        <div className="bg-[#0F172A] border border-slate-700/80 rounded-xl p-3 text-xs text-slate-300 font-bold flex items-center gap-2 text-start">
+        <div className="bg-[#1b2150]/60 backdrop-blur-md border border-slate-700/80 rounded-xl p-3 text-xs text-slate-300 font-bold flex items-center gap-2 text-start">
           <Lock className="w-4 h-4 text-purple-400 shrink-0" />
           <span>{stageTitle}</span>
         </div>

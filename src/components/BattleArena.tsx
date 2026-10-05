@@ -431,6 +431,10 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                 </button>
               )}
             </div>
+        {/* Center Round & Category Pill */}
+        <div className="flex flex-col items-center">
+          <div className="px-3 py-1 bg-[#1b2150]/60 backdrop-blur-md border border-slate-700/80 rounded-full text-[11px] font-bold text-slate-300 font-mono">
+            {lang === 'ar' ? `جولة ${roundNumber}` : `Round ${roundNumber}`}
           </div>
         </div>
 
@@ -481,7 +485,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
 
       {/* 4. PRIMARY LATEST ANSWER BANNER (Prominent part of the active gameplay view) */}
       {latestQuestionRecord && !activeQuestionText && (
-        <div className="bg-[#0F172A] border-2 border-emerald-500/40 rounded-3xl p-4 shadow-xl space-y-2.5 animate-fade-in">
+        <div className="bg-[#1b2150]/60 backdrop-blur-md border-2 border-emerald-500/40 rounded-3xl p-4 shadow-xl space-y-2.5 animate-fade-in">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-black text-slate-300">
               <span className="text-base">💬</span>
@@ -542,7 +546,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
           </div>
 
           {/* Context: Question text */}
-          <div className="text-[11px] text-slate-400 font-medium pt-1 border-t border-slate-800">
+          <div className="text-[11px] text-slate-400 font-medium pt-1 border-t border-indigo-300/20">
             <span>{lang === 'ar' ? `على سؤال ${isLatestAskedByMe ? 'صورتك' : latestAskerName}: ` : `Regarding question: `}</span>
             <span className="text-white font-bold">«{latestQuestionRecord.question}»</span>
           </div>
@@ -553,7 +557,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
       <div ref={actionZoneRef} className="game-card-surface p-4 border border-slate-700/60 space-y-3 scroll-mt-3">
         {/* PASS & PLAY HANDOFF INTERSTITIAL */}
         {!isOnlineMatch && !isBotMatch && passAndPlayHandoff && activeQuestionText && (
-          <div className="p-4 bg-[#0F172A] border border-purple-500/40 rounded-2xl text-center space-y-3 animate-scale-up">
+          <div className="p-4 bg-[#1b2150]/60 backdrop-blur-md border border-purple-500/40 rounded-2xl text-center space-y-3 animate-scale-up">
             <div className="w-12 h-12 rounded-2xl bg-purple-500/15 border border-purple-500/30 text-purple-400 flex items-center justify-center mx-auto text-2xl">
               <Smartphone className="w-6 h-6 text-purple-400" />
             </div>
@@ -566,7 +570,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                   ? `مرر الجهاز لـ ${opponentName} ليجيب عن سؤالك!`
                   : `Hand the phone to ${opponentName} to answer!`}
               </h4>
-              <p className="text-xs text-slate-300 font-medium bg-[#1E293B] p-2.5 rounded-xl border border-slate-700 shadow-inner">
+              <p className="text-xs text-slate-300 font-medium bg-[#1b2150]/60 p-2.5 rounded-xl border border-indigo-300/30 shadow-inner">
                 "{activeQuestionText}"
               </p>
             </div>
@@ -589,12 +593,12 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
         {activeQuestionText && !passAndPlayHandoff ? (
           /* 2A: The Asker (Waiting for opponent answer) */
           isAskerOfPendingQuestion ? (
-            <div className="p-5 bg-[#0F172A] border border-purple-500/40 rounded-3xl text-center space-y-3 animate-fade-in shadow-xl">
+            <div className="p-5 bg-[#1b2150]/60 backdrop-blur-md border border-purple-500/40 rounded-3xl text-center space-y-3 animate-fade-in shadow-xl">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-500/15 text-purple-300 border border-purple-500/30 rounded-full text-xs font-bold">
                 <span>💬</span>
                 <span>{lang === 'ar' ? 'سؤالك أُرسل بنجاح:' : 'Your question was sent:'}</span>
               </div>
-              <div className="text-base sm:text-lg font-black text-white bg-[#1E293B] p-3.5 rounded-2xl border border-slate-700 shadow-inner">
+              <div className="text-base sm:text-lg font-black text-white bg-[#1b2150]/60 p-3.5 rounded-2xl border border-indigo-300/30 shadow-inner">
                 «{activeQuestionText}»
               </div>
               <div className="text-xs font-black text-purple-300 animate-pulse flex items-center justify-center gap-2 pt-1">
@@ -604,7 +608,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
             </div>
           ) : (
             /* 2B: The Receiver Player (Point 2 - Direct, bold answering card) */
-            <div className="bg-[#0F172A] border-2 border-purple-500/50 rounded-3xl p-4 sm:p-5 shadow-2xl space-y-4 animate-scale-up">
+            <div className="bg-[#1b2150]/60 backdrop-blur-md border-2 border-purple-500/50 rounded-3xl p-4 sm:p-5 shadow-2xl space-y-4 animate-scale-up">
               <div className="text-center space-y-1">
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-500/20 border border-purple-500/40 rounded-full text-xs font-black text-purple-300">
                   <span>{isVoiceActiveQuestion ? '🎙️ سؤال صوتي' : '💬 سؤال جديد'}</span>
@@ -612,7 +616,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                   <span>{lang === 'ar' ? `${activePlayer.name} بيسألك:` : `${activePlayer.name} asks you:`}</span>
                 </div>
 
-                <div className="text-base sm:text-xl font-black text-white bg-[#1E293B] p-4 rounded-2xl border border-slate-700 shadow-inner leading-relaxed">
+                <div className="text-base sm:text-xl font-black text-white bg-[#1b2150]/60 p-4 rounded-2xl border border-indigo-300/30 shadow-inner leading-relaxed">
                   «{activeQuestionText}»
                 </div>
 
@@ -722,7 +726,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                   value={answerNote}
                   onChange={(e) => setAnswerNote(e.target.value)}
                   placeholder={lang === 'ar' ? 'إضافة ملاحظة (مثلاً: غالبًا أيوه)...' : 'Add a note (optional)...'}
-                  className="w-full h-11 bg-[#1E293B] border border-slate-700 focus:border-purple-500 rounded-xl px-3 text-xs font-bold text-white placeholder-slate-500 focus:outline-none transition-all"
+                  className="w-full h-11 bg-[#1b2150]/60 border border-indigo-300/30 focus:border-purple-500 rounded-xl px-3 text-xs font-bold text-white placeholder-slate-500 focus:outline-none transition-all"
                 />
               </div>
 
@@ -741,7 +745,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
           /* STATE 1: ASKING STATE (NO QUESTION PENDING) */
           isMyTurnToAsk ? (
             /* 1A: ACTIVE PLAYER'S TURN TO ASK — SINGLE UNIFIED QUESTION COMPOSER */
-            <div className="bg-[#0F172A] border border-blue-500/40 rounded-3xl p-4 sm:p-5 shadow-2xl space-y-3.5 animate-scale-up">
+            <div className="bg-[#1b2150]/60 backdrop-blur-md border border-blue-500/40 rounded-3xl p-4 sm:p-5 shadow-2xl space-y-3.5 animate-scale-up">
               {/* Header: Turn announcement */}
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-blue-400 animate-ping" />
@@ -763,7 +767,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                         ? 'اكتب سؤالك عن صورتك المخفية (مثال: هل صورتي بتتاكل؟)...'
                         : 'Type your question about your card...'
                     }
-                    className="w-full h-13 bg-[#070D1E] border border-slate-700 focus:border-blue-500 rounded-xl px-4 text-sm text-white font-bold placeholder-slate-500 focus:outline-none shadow-inner"
+                    className="w-full h-13 bg-[#0a1030]/80 border border-indigo-300/30 focus:border-blue-500 rounded-xl px-4 text-sm text-white font-bold placeholder-slate-500 focus:outline-none shadow-inner"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && questionInput.trim()) {
                         e.preventDefault();
@@ -787,7 +791,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
             </div>
           ) : (
             /* 1B: WAITING OPPONENT (Clean, minimal status card with live mic talk access) */
-            <div className="p-5 bg-[#0F172A] border border-slate-700/80 rounded-3xl text-center space-y-3 shadow-lg">
+            <div className="p-5 bg-[#1b2150]/60 backdrop-blur-md border border-slate-700/80 rounded-3xl text-center space-y-3 shadow-lg">
               <div className="w-10 h-10 rounded-full bg-blue-500/10 text-blue-400 flex items-center justify-center mx-auto text-xl animate-pulse">
                 ⏳
               </div>
@@ -838,8 +842,8 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
       {/* 6. QUESTION HISTORY MODAL (WITH TABS FOR INDEPENDENT DEDUCTION TRACKS) */}
       {isHistoryOpen && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4 animate-fade-in">
-          <div className="w-full max-w-md bg-[#0F172A] rounded-t-[32px] sm:rounded-3xl p-5 border border-slate-700/80 shadow-2xl space-y-4 max-h-[82vh] flex flex-col animate-scale-up">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="w-full max-w-md bg-[#1b2150]/60 backdrop-blur-md rounded-t-[32px] sm:rounded-3xl p-5 border border-slate-700/80 shadow-2xl space-y-4 max-h-[82vh] flex flex-col animate-scale-up">
+            <div className="flex items-center justify-between border-b border-indigo-300/20 pb-3">
               <div className="flex items-center gap-2">
                 <BookOpen className="w-5 h-5 text-purple-400" />
                 <h3 className="font-black text-lg text-white">
@@ -856,7 +860,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
             </div>
 
             {/* 3 Clear Tabs for Independent Deductions */}
-            <div className="grid grid-cols-3 gap-1 bg-[#1E293B] p-1 rounded-xl text-xs font-bold">
+            <div className="grid grid-cols-3 gap-1 bg-[#1b2150]/60 p-1 rounded-xl text-xs font-bold">
               <button
                 type="button"
                 onClick={() => setHistoryTab('MY_CLUES')}
@@ -924,7 +928,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                   return (
                     <div
                       key={rec.id}
-                      className="p-3 bg-[#1E293B] rounded-xl border border-slate-700/70 text-xs space-y-1.5"
+                      className="p-3 bg-[#1b2150]/60 rounded-xl border border-slate-700/70 text-xs space-y-1.5"
                     >
                       <div className="flex items-center gap-1.5 font-bold">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] text-white ${
@@ -982,7 +986,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
 
                       {/* Display note if provided by opponent */}
                       {rec.note && (
-                        <div className="ps-2 text-[11px] text-slate-300 bg-[#0F172A] p-2 rounded-xl border border-slate-700/80 flex items-start gap-1.5 mt-1">
+                        <div className="ps-2 text-[11px] text-slate-300 bg-[#1b2150]/60 backdrop-blur-md p-2 rounded-xl border border-slate-700/80 flex items-start gap-1.5 mt-1">
                           <span className="shrink-0">📝</span>
                           <span className="font-medium italic">"{rec.note}"</span>
                         </div>
@@ -993,7 +997,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
               })()}
             </div>
 
-            <div className="pt-3 border-t border-slate-800">
+            <div className="pt-3 border-t border-indigo-300/20">
               <button
                 type="button"
                 onClick={() => setIsHistoryOpen(false)}

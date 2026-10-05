@@ -29,7 +29,7 @@ export const PlayerCountModal: React.FC<PlayerCountModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 animate-fade-in select-none">
-      <div className="w-full max-w-sm bg-[#0F172A] border-2 border-slate-700 rounded-3xl p-4 sm:p-5 shadow-2xl space-y-3.5 animate-scale-up relative max-h-[90vh] overflow-y-auto">
+      <div className="w-full max-w-sm bg-[#141a45]/95 border-2 border-indigo-300/30 rounded-3xl p-4 sm:p-5 shadow-2xl space-y-3.5 animate-scale-up relative max-h-[90vh] overflow-y-auto">
         {/* Close Button */}
         <button
           type="button"

@@ -96,7 +96,7 @@ export const RevealScreen: React.FC<RevealScreenProps> = ({
             >
               {/* Card Back (Locked mystery state) */}
               <div
-                className="absolute inset-0 bg-[#0F172A] text-white rounded-2xl p-4 flex flex-col items-center justify-center border-2 border-amber-500/40 shadow-xl"
+                className="absolute inset-0 bg-[#1b2150]/60 backdrop-blur-md text-white rounded-2xl p-4 flex flex-col items-center justify-center border-2 border-amber-500/40 shadow-xl"
                 style={{
                   backfaceVisibility: 'hidden',
                   WebkitBackfaceVisibility: 'hidden',
@@ -169,7 +169,7 @@ export const RevealScreen: React.FC<RevealScreenProps> = ({
             >
               {/* Card Back */}
               <div
-                className="absolute inset-0 bg-[#0F172A] text-white rounded-2xl p-4 flex flex-col items-center justify-center border-2 border-amber-500/40 shadow-xl"
+                className="absolute inset-0 bg-[#1b2150]/60 backdrop-blur-md text-white rounded-2xl p-4 flex flex-col items-center justify-center border-2 border-amber-500/40 shadow-xl"
                 style={{
                   backfaceVisibility: 'hidden',
                   WebkitBackfaceVisibility: 'hidden',
@@ -226,7 +226,7 @@ export const RevealScreen: React.FC<RevealScreenProps> = ({
             setIsFlipped(!isFlipped);
             sound.playCardFlip();
           }}
-          className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-[#1E293B] hover:bg-slate-700 border border-slate-700 rounded-full text-xs font-bold text-slate-300 hover:text-white transition-all cursor-pointer active:scale-95 shadow-sm"
+          className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-[#1b2150]/60 hover:bg-slate-700 border border-indigo-300/30 rounded-full text-xs font-bold text-slate-300 hover:text-white transition-all cursor-pointer active:scale-95 shadow-sm"
         >
           <span>🔄</span>
           <span>{lang === 'ar' ? (isFlipped ? 'إخفاء البطاقات 🔒' : 'اقلب واكشف البطاقات 👁️') : 'Flip Cards 🔄'}</span>
