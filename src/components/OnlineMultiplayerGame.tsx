@@ -88,7 +88,6 @@ const NEON_BG_STYLE: React.CSSProperties = {
     'linear-gradient(rgba(8,10,32,0.28), rgba(10,8,34,0.50)), url(/art/bg-living-room.webp), linear-gradient(180deg,#0b1030,#140d33 55%,#1a1030)',
 };
 const GLASS = 'rounded-[26px] border border-indigo-400/30 bg-[#1b2150]/60 backdrop-blur-md shadow-[0_0_28px_rgba(99,102,241,0.22)]';
-const AVATARS = ['👩', '🧔', '👨', '🧑'];
 
 const NeonTopBar: React.FC<{ round: number; ar: boolean; soundEnabled: boolean; onOpenRules?: () => void; onToggleSound?: () => void }> = ({ round, ar, soundEnabled, onOpenRules, onToggleSound }) => (
   <div dir="ltr" className={`${GLASS} px-3 py-2 flex items-center justify-between gap-2`}>
@@ -295,9 +294,11 @@ const Arena: React.FC<{ room: MpRoomState; me: MpPlayerView; lang: 'ar' | 'en' }
     <div className="space-y-3">
       {/* players: avatar, name, score bar (the active player is highlighted) */}
       <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${room.players.length}, minmax(0, 1fr))` }}>
-        {[...room.players.slice(room.players.findIndex((x) => x.id === me.id)), ...room.players.slice(0, room.players.findIndex((x) => x.id === me.id))].map((p, idx) => (
+        {[...room.players.slice(room.players.findIndex((x) => x.id === me.id)), ...room.players.slice(0, room.players.findIndex((x) => x.id === me.id))].map((p) => (
           <div key={p.id} className={`p-2 rounded-2xl border flex items-center gap-2 min-w-0 backdrop-blur-md ${p.id === room.activePlayerId ? 'bg-indigo-500/25 border-violet-400 ring-2 ring-violet-500/70 shadow-[0_0_18px_rgba(139,92,246,0.55)]' : 'bg-[#1b2150]/60 border-indigo-300/20'} ${!p.connected ? 'opacity-50' : ''}`}>
-            <div className="w-9 h-9 rounded-full shrink-0 bg-gradient-to-br from-amber-300 to-pink-500 flex items-center justify-center text-lg border-2 border-white/70">{AVATARS[idx % AVATARS.length]}</div>
+            <div className="w-10 h-10 rounded-full shrink-0 bg-gradient-to-b from-sky-100 to-indigo-200 flex items-center justify-center border-2 border-white/80 shadow-md overflow-hidden">
+              <img src="/art/avatar.webp" alt="" aria-hidden width={32} height={32} className="w-8 h-8 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+            </div>
             <div className="min-w-0 flex-1">
               <div className="text-[11px] leading-tight font-black text-white break-words">{p.name}{p.id === me.id && (ar ? ' (أنت)' : ' (you)')}{!p.connected && ' 📴'}</div>
               <div className="flex items-center gap-1.5">
