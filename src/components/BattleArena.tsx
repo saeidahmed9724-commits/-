@@ -346,7 +346,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
 
       {/* 1. MATCH BAR: round + category */}
       <div className="flex items-center justify-between px-1">
-        <div className="px-3 py-1 bg-[#0F172A] border border-slate-700/80 rounded-full text-[11px] font-bold text-slate-300 font-mono">
+        <div className="px-3 py-1 bg-[#1b2150]/60 backdrop-blur-md border border-slate-700/80 rounded-full text-[11px] font-bold text-slate-300 font-mono">
           {lang === 'ar' ? `جولة ${roundNumber}` : `Round ${roundNumber}`}
         </div>
         {category?.icon && (
@@ -358,7 +358,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
       </div>
 
       {/* 2. THE DUEL STAGE: you (hidden card) VS your opponent (visible card), scores under the names */}
-      <div data-testid="duel-stage" className="relative rounded-3xl border border-slate-700/60 bg-gradient-to-b from-[#121B36] to-[#0A1124] p-3 sm:p-4 shadow-xl">
+      <div data-testid="duel-stage" className="relative rounded-3xl border border-slate-700/60 bg-[#1b2150]/60 backdrop-blur-md p-3 sm:p-4 shadow-xl">
         <div className="grid grid-cols-2 gap-3 sm:gap-4">
           {/* YOU */}
           <div className="flex flex-col items-center gap-2 min-w-0">
@@ -431,10 +431,6 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
                 </button>
               )}
             </div>
-        {/* Center Round & Category Pill */}
-        <div className="flex flex-col items-center">
-          <div className="px-3 py-1 bg-[#1b2150]/60 backdrop-blur-md border border-slate-700/80 rounded-full text-[11px] font-bold text-slate-300 font-mono">
-            {lang === 'ar' ? `جولة ${roundNumber}` : `Round ${roundNumber}`}
           </div>
         </div>
 
