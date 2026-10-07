@@ -1,7 +1,9 @@
 import React from 'react';
-import { BookOpen, Bot, HelpCircle, Link2, Lock, Play, Settings, Smartphone, Volume2, VolumeX } from 'lucide-react';
+import { BookOpen, Bot, HelpCircle, Lock, Settings, Smartphone, Users, Volume2, VolumeX } from 'lucide-react';
 import { sound } from '../utils/audio';
 import { GameLogoBanner } from './GameLogoBanner';
+import { Avatar } from './social/Avatar';
+import type { FriendView } from '../services/social';
 
 interface HomeScreenProps {
   onCreateOnlineGame: () => void;
@@ -10,6 +12,14 @@ interface HomeScreenProps {
   onPlayWithAI: () => void;
   onOpenRules: () => void;
   onOpenMultiplayer?: () => void;
+  /** main button: pick friends and play (no codes) */
+  onPlayWithFriends: () => void;
+  onOpenFriends: () => void;
+  /** pending friend requests + invitations, shown as a badge on the Friends button */
+  friendsBadge?: number;
+  /** people I played with recently (still friends): one tap = invite them to a 2-player game */
+  recent?: FriendView[];
+  onQuickPlay?: (friend: FriendView) => void;
   lang: 'ar' | 'en';
   soundEnabled?: boolean;
   onToggleSound?: () => void;
@@ -26,7 +36,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onPlayOffline,
   onPlayWithAI,
   onOpenRules,
-  onOpenMultiplayer,
+  onPlayWithFriends,
+  onOpenFriends,
+  friendsBadge = 0,
+  recent = [],
+  onQuickPlay,
   lang,
   soundEnabled = true,
   onToggleSound,
@@ -60,20 +74,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </div>
       </div>
 
-      {/* 3-4 players */}
-      {onOpenMultiplayer && (
-        <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={go(onOpenMultiplayer, true)}
-            className="px-4 h-9 rounded-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 text-white text-xs font-black border border-purple-300/40 shadow-xl flex items-center gap-1.5 cursor-pointer active:scale-95"
-          >
-            <span>👥</span>
-            {ar ? 'طور 3–4 لاعبين' : '3-4 Players Mode'}
-          </button>
-        </div>
-      )}
-
       {/* hero */}
       <div className={`${GLASS} px-5 py-6 text-center space-y-3`}>
         <img
@@ -103,23 +103,48 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </p>
       </div>
 
-      {/* main buttons */}
+      {/* main button: play with friends (no room codes) */}
       <button
         type="button"
-        onClick={go(onCreateOnlineGame, true)}
+        onClick={go(onPlayWithFriends, true)}
         className="w-full h-16 rounded-2xl bg-gradient-to-b from-amber-300 to-orange-500 text-indigo-950 text-xl font-black flex items-center justify-center gap-2.5 shadow-lg cursor-pointer active:scale-95"
       >
-        <Play className="w-6 h-6 fill-current" />
-        {ar ? 'ابدأ اللعبة' : 'Start Game'}
+        <Users className="w-6 h-6" />
+        {ar ? 'العب مع أصدقائك' : 'Play with Friends'}
       </button>
+
+      {/* quick play: the people I played with last */}
+      {recent.length > 0 && onQuickPlay && (
+        <div className={`${GLASS} p-3 space-y-2`}>
+          <div className="text-xs font-black text-slate-200 px-1">{ar ? 'العب مرة أخرى' : 'Play again'}</div>
+          <div className="grid grid-cols-4 gap-2">
+            {recent.slice(0, 4).map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={go(() => onQuickPlay(f), true)}
+                className="min-w-0 flex flex-col items-center gap-1 p-2 rounded-2xl bg-[#0a1030]/50 border border-indigo-300/20 cursor-pointer active:scale-95"
+              >
+                <Avatar emoji={f.avatar} status={f.status} size={44} />
+                <span className="text-[11px] font-black text-white truncate max-w-full">{f.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <button
         type="button"
-        onClick={go(onJoinRoom, true)}
-        className="w-full h-16 rounded-2xl bg-gradient-to-b from-blue-500 to-violet-600 border border-white/30 text-white text-xl font-black flex items-center justify-center gap-2.5 shadow-lg cursor-pointer active:scale-95"
+        onClick={go(onOpenFriends)}
+        className={`${GLASS} relative w-full h-14 text-white text-base font-black flex items-center justify-center gap-2.5 cursor-pointer active:scale-95`}
       >
-        <Link2 className="w-6 h-6" />
-        {ar ? 'انضم بكود' : 'Join with Code'}
+        <span>👥</span>
+        {ar ? 'الأصدقاء' : 'Friends'}
+        {friendsBadge > 0 && (
+          <span className="absolute top-2 end-3 min-w-6 h-6 px-1.5 rounded-full bg-rose-500 text-white text-xs font-black flex items-center justify-center shadow-lg">
+            {friendsBadge}
+          </span>
+        )}
       </button>
 
       {/* secondary buttons */}
@@ -140,6 +165,29 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <Smartphone className="w-5 h-5 text-emerald-300 shrink-0" />
           {ar ? 'لاعبين بجهاز واحد' : 'Pass & Play (1 Device)'}
         </button>
+      </div>
+
+      {/* fallback: room code (for someone who is not on your friends list) */}
+      <div className="rounded-2xl border border-dashed border-indigo-300/30 p-3 space-y-2">
+        <div className="text-[11px] font-bold text-slate-400 text-center">
+          {ar ? 'صاحبك مش في قايمة أصدقائك؟ العب بكود الغرفة' : 'Friend not on your list? Play with a room code'}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={go(onCreateOnlineGame, true)}
+            className="h-11 rounded-xl bg-[#1b2150]/60 border border-indigo-300/30 text-slate-100 text-xs font-black cursor-pointer active:scale-95"
+          >
+            {ar ? 'إنشاء غرفة بكود' : 'Create with code'}
+          </button>
+          <button
+            type="button"
+            onClick={go(onJoinRoom, true)}
+            className="h-11 rounded-xl bg-[#1b2150]/60 border border-indigo-300/30 text-slate-100 text-xs font-black cursor-pointer active:scale-95"
+          >
+            {ar ? 'انضم بكود' : 'Join with code'}
+          </button>
+        </div>
       </div>
 
       {/* footer nav */}

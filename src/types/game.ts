@@ -11,7 +11,9 @@ export type GamePhase =
   | 'PLAYING'
   | 'ROUND_REVEAL'
   | 'GAME_OVER'
-  | 'MP_ONLINE'; // 3 / 4 players online (lobby, picking, playing and results are all inside)
+  | 'MP_ONLINE' // 3 / 4 players online (lobby, picking, playing and results are all inside)
+  | 'FRIENDS' // friend list, requests, my ID
+  | 'FRIENDS_SETUP'; // pick friends to play with
 
 export type AnswerType = 'YES' | 'NO' | 'SOMETIMES' | 'NOT_SURE';
 

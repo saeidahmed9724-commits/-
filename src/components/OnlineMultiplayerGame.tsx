@@ -8,6 +8,7 @@ import { sound } from '../utils/audio';
 import { VoiceChatBar, useJoinVoice } from './VoiceChatBar';
 import { ChoosePictureScreen } from './ChoosePictureScreen';
 import { prepareSecretImage } from '../utils/image';
+import { FriendInvitePanel } from './social/FriendInvitePanel';
 
 /**
  * 3 / 4 players ONLINE. Every player is on their own device and joins the same room with a
@@ -118,7 +119,13 @@ const Lobby: React.FC<{ room: MpRoomState; lang: 'ar' | 'en'; onLeave: () => voi
 
   return (
     <div className="game-card-surface p-4 border border-purple-500/40 space-y-3 shadow-xl">
+      {/* Friends: invite straight from the game (no code needed) */}
+      {!full && <FriendInvitePanel code={room.code} lang={lang} />}
+
       <div className="text-center space-y-1">
+        <div className="text-[11px] font-black text-slate-400">
+          {ar ? '🔑 أو شارك الكود (لو صاحبك مش في أصدقائك)' : '🔑 Or share the code (for someone not on your friends list)'}
+        </div>
         <div className="text-[11px] font-black text-purple-300">
           {ar ? `👥 ${room.maxPlayers} لاعبين أونلاين — كل لاعب من جهازه` : `👥 ${room.maxPlayers} Players Online — each on their own device`}
         </div>

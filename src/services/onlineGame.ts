@@ -69,57 +69,6 @@ export interface OnlineRoomData {
   targets?: Array<{ ownerId: string; ownerName: string; isSolved: boolean; revealedImage?: { imageUrl: string; title: string } }>;
 }
 
-// ---- Saved online session: lets a page refresh / dropped connection return to the same room ----
-
-const SESSION_KEY = 'wih-online-session';
-const SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
-
-export interface SavedSession {
-  kind: '2p' | 'mp';
-  role: 'host' | 'guest';
-  code: string;
-  /** Secret given by the server: proves this browser owns the seat. */
-  token: string;
-  name: string;
-  maxPlayers?: 3 | 4;
-  savedAt: number;
-}
-
-export function loadSession(): SavedSession | null {
-  try {
-    const raw = window.localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const s = JSON.parse(raw) as SavedSession;
-    const valid =
-      s && (s.kind === '2p' || s.kind === 'mp') && (s.role === 'host' || s.role === 'guest') &&
-      typeof s.code === 'string' && s.code && typeof s.token === 'string' && s.token &&
-      Date.now() - Number(s.savedAt) < SESSION_MAX_AGE_MS;
-    if (!valid) {
-      window.localStorage.removeItem(SESSION_KEY);
-      return null;
-    }
-    return s;
-  } catch {
-    return null;
-  }
-}
-
-function saveSession(s: SavedSession) {
-  try {
-    window.localStorage.setItem(SESSION_KEY, JSON.stringify(s));
-  } catch {
-    // private mode / storage full: the game still works, it just cannot survive a refresh
-  }
-}
-
-export function clearSession() {
-  try {
-    window.localStorage.removeItem(SESSION_KEY);
-  } catch {
-    // ignore
-  }
-}
-
 export type OnlineEventCallback = (event: {
   type: string;
   room?: OnlineRoomData;
@@ -141,13 +90,7 @@ class OnlineGameService {
   public roomCode: string | null = null;
   /** My seat id in a 3/4-player room (also my voice id). Null in the 2-player system. */
   public mpPlayerId: string | null = null;
-
-  // What we need to remember about the room we are entering (saved once the server gives us a token).
-  private pendingName = '';
-  /** True after the player chose to leave: no automatic reconnection. */
-  private intentionalClose = false;
-  private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-  private reconnectAttempts = 0;
+  private lastRoom: OnlineRoomData | null = null;
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -155,122 +98,42 @@ class OnlineGameService {
         resolve();
         return;
       }
-      this.intentionalClose = false;
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const url = `${protocol}//${window.location.host}`;
 
       try {
-        const socket = new WebSocket(url);
-        this.socket = socket;
+        this.socket = new WebSocket(url);
 
-        socket.onopen = () => {
+        this.socket.onopen = () => {
           resolve();
         };
 
-        socket.onerror = (err) => {
+        this.socket.onerror = (err) => {
           reject(err);
         };
 
-        socket.onmessage = (event) => {
+        this.socket.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            this.captureSession(data);
+
+            // The server sends ROOM_UPDATE right after ROOM_JOINED, i.e. BEFORE the lobby screen has
+            // mounted and subscribed. Keep the latest one so a screen that opens late still starts from it.
+            if (data.type === 'ROOM_UPDATE' && data.room) this.lastRoom = data.room;
+
             this.notify(data);
           } catch {
             // ignore
           }
         };
 
-        socket.onclose = () => {
-          if (this.socket === socket) this.socket = null;
-          // Connection lost (not on purpose): keep trying to take our seat back.
-          if (!this.intentionalClose && loadSession()) this.scheduleReconnect();
+        this.socket.onclose = () => {
+          // auto reconnect or handle disconnect
         };
       } catch (e) {
         reject(e);
       }
     });
-  }
-
-  /** Remember the seat as soon as the server hands out its token; forget it when the room is gone. */
-  private captureSession(d: any) {
-    if ((d.type === 'ROOM_CREATED' || d.type === 'ROOM_JOINED' || d.type === 'MP_JOINED') && d.token && this.roomCode && this.userRole) {
-      const mp = d.type === 'MP_JOINED';
-      saveSession({
-        kind: mp ? 'mp' : '2p',
-        role: this.userRole,
-        code: this.roomCode,
-        token: String(d.token),
-        name: this.pendingName,
-        maxPlayers: mp ? (d.maxPlayers === 4 ? 4 : 3) : undefined,
-        savedAt: Date.now(),
-      });
-    } else if (d.type === 'MP_ROOM_CLOSED' || d.type === 'HOST_DISCONNECTED' || d.type === 'RESUME_FAILED') {
-      clearSession();
-    }
-  }
-
-  /**
-   * Take our seat back in the room saved on this device (after a refresh or a dropped connection).
-   * Resolves when the server accepted the token; the room state follows as usual.
-   */
-  async resume(): Promise<SavedSession> {
-    const saved = loadSession();
-    if (!saved) throw new Error('no-session');
-    await this.connect();
-    this.roomCode = saved.code;
-    this.userRole = saved.role;
-    this.pendingName = saved.name;
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        off();
-        reject(new Error('timeout'));
-      }, 6000);
-      const off = this.subscribe((e) => {
-        if (e.type === 'ROOM_RESUMED' || e.type === 'MP_JOINED') {
-          clearTimeout(timer);
-          off();
-          if (e.type === 'MP_JOINED') this.mpPlayerId = (e as any).playerId;
-          this.reconnectAttempts = 0;
-          resolve(saved);
-        } else if (e.type === 'RESUME_FAILED' || e.type === 'ERROR') {
-          clearTimeout(timer);
-          off();
-          clearSession();
-          reject(new Error(e.type === 'ERROR' ? e.message || 'error' : 'RESUME_FAILED'));
-        }
-      });
-      this.send({ type: saved.kind === 'mp' ? 'MP_RESUME' : 'RESUME_ROOM', code: saved.code, token: saved.token });
-    });
-  }
-
-  private scheduleReconnect(delayMs?: number) {
-    if (this.reconnectTimer || this.intentionalClose) return;
-    const attempt = ++this.reconnectAttempts;
-    if (attempt > 40) return; // give up quietly; a refresh will still resume
-    const delay = delayMs ?? Math.min(800 * attempt, 5000);
-    this.reconnectTimer = setTimeout(async () => {
-      this.reconnectTimer = undefined;
-      if (this.intentionalClose || !loadSession()) return;
-      try {
-        await this.resume();
-      } catch {
-        if (loadSession()) this.scheduleReconnect();
-      }
-    }, delay);
-  }
-
-  /** Call when the page becomes visible / the network is back: reconnect right away if we were dropped. */
-  ensureConnected() {
-    if (this.intentionalClose || !loadSession()) return;
-    if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) return;
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = undefined;
-    }
-    this.reconnectAttempts = 0;
-    this.scheduleReconnect(0);
   }
 
   subscribe(callback: OnlineEventCallback) {
@@ -297,15 +160,34 @@ class OnlineGameService {
     targetScore: number
   ) {
     await this.connect();
+    this.lastRoom = null;
     this.roomCode = code.toUpperCase();
     this.userRole = 'host';
-    this.pendingName = playerName;
-    this.send({
-      type: 'CREATE_ROOM',
-      code: this.roomCode,
-      playerName,
-      category,
-      targetScore,
+    // Wait until the server really created the room: invitations are sent right after this returns
+    // (on another socket) and the server only accepts invitations for rooms that exist.
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        off();
+        reject(new Error('timeout'));
+      }, 6000);
+      const off = this.subscribe((e) => {
+        if (e.type === 'ROOM_CREATED') {
+          clearTimeout(timer);
+          off();
+          resolve();
+        } else if (e.type === 'ERROR') {
+          clearTimeout(timer);
+          off();
+          reject(new Error(e.message || 'error'));
+        }
+      });
+      this.send({
+        type: 'CREATE_ROOM',
+        code: this.roomCode,
+        playerName,
+        category,
+        targetScore,
+      });
     });
   }
 
@@ -315,9 +197,9 @@ class OnlineGameService {
    */
   async joinRoom(code: string, playerName: string): Promise<'ROOM_JOINED' | 'MP_JOINED'> {
     await this.connect();
+    this.lastRoom = null;
     this.roomCode = code.toUpperCase();
     this.userRole = 'guest';
-    this.pendingName = playerName;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         off();
@@ -345,7 +227,6 @@ class OnlineGameService {
     await this.connect();
     this.roomCode = code.toUpperCase();
     this.userRole = 'host';
-    this.pendingName = playerName;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         off();
@@ -392,10 +273,6 @@ class OnlineGameService {
   mpLeave() {
     this.send({ type: 'MP_LEAVE' });
     this.mpPlayerId = null;
-  }
-  /** Leave a 2-player room on purpose (frees the seat right away). */
-  leaveRoom() {
-    this.send({ type: 'LEAVE_ROOM' });
   }
 
   startChoosing() {
@@ -478,19 +355,17 @@ class OnlineGameService {
     this.send({ type: 'NEXT_ROUND' });
   }
 
-  /** Leave for good: closes the socket and forgets the saved seat (no automatic reconnection). */
+  /** The most recent ROOM_UPDATE of the room I am in (null when not in a room). */
+  getLastRoom(): OnlineRoomData | null {
+    return this.lastRoom;
+  }
+
   disconnect() {
-    this.intentionalClose = true;
-    clearSession();
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = undefined;
-    }
-    this.reconnectAttempts = 0;
     if (this.socket) {
       this.socket.close();
       this.socket = null;
     }
+    this.lastRoom = null;
     this.roomCode = null;
     this.userRole = null;
     this.mpPlayerId = null;

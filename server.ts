@@ -6,7 +6,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { normalizeText, isCorrectGuess } from './src/utils/normalize';
-import { mpHandle, mpClose, type MpCtx } from './mpRooms';
+import { mpHandle, mpClose, mpRoomInfo, type MpCtx } from './mpRooms';
+import { SocialStore } from './social/store';
+import { SocialService } from './social/service';
+import { SocialHub, type RoomInfo } from './social/hub';
+import { registerSocialRoutes } from './social/routes';
 import { searchAllProviders, type SearchImageResult } from './imageProviders';
 
 dotenv.config();
@@ -17,6 +21,15 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '10mb' }));
+
+// ---------------------------------------------------------------------------
+// Friends system: permanent accounts/friendships (JSON file in DATA_DIR) + the always-on
+// /ws/social channel for presence and invitations. Rooms themselves stay in memory.
+// ---------------------------------------------------------------------------
+const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.resolve(__dirname, 'data');
+const socialStore = new SocialStore(path.join(DATA_DIR, 'social.json'));
+const socialService = new SocialService(socialStore);
+registerSocialRoutes(app, socialService);
 
 const imageSearchCache = new Map<string, { timestamp: number; data: SearchImageResult[] }>();
 const CACHE_TTL_MS = 1000 * 60 * 30; // 30 minutes
@@ -185,22 +198,21 @@ app.get('/api/search-images', async (req, res) => {
 });
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+// Two socket servers share the HTTP server: the game (any path, as before) and /ws/social (friends).
+const wss = new WebSocketServer({ noServer: true });
+const socialWss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
+server.on('upgrade', (req, socket, head) => {
+  const { pathname } = new URL(req.url ?? '/', 'http://localhost');
+  const target = pathname === '/ws/social' ? socialWss : wss;
+  target.handleUpgrade(req, socket, head, (ws) => target.emit('connection', ws, req));
+});
 
 interface RoomPlayer {
   ws?: WebSocket;
   id: string;
   name: string;
   score: number;
-  /** Secret that lets this player take their seat back after a refresh / dropped connection. */
-  token: string;
-  graceTimer?: ReturnType<typeof setTimeout>;
 }
-
-/** How long a seat is kept for a player whose connection dropped (refresh, phone sleep, bad network). */
-const RESUME_GRACE_MS = Number(process.env.RESUME_GRACE_MS) || 2 * 60 * 1000;
-const newToken = () => crypto.randomBytes(16).toString('hex');
-const isLive = (p?: RoomPlayer) => Boolean(p?.ws && p.ws.readyState === WebSocket.OPEN);
 
 interface OnlineRoom {
   code: string;
@@ -247,6 +259,28 @@ interface OnlineRoom {
 
 const rooms = new Map<string, OnlineRoom>();
 
+/** Lets the invitation system ask "can someone still join this room?" for both room systems. */
+function getRoomInfo(code: string): RoomInfo {
+  const c = String(code).toUpperCase();
+  const mp = mpRoomInfo(c);
+  if (mp) return mp;
+  const room = rooms.get(c);
+  const hostHere = room?.host.ws?.readyState === WebSocket.OPEN;
+  if (!room || !hostHere) return { exists: false, joinable: false, maxPlayers: 2, seatsLeft: 0 };
+  const guestHere = room.guest?.ws?.readyState === WebSocket.OPEN;
+  return { exists: true, joinable: room.phase === 'LOBBY' && !guestHere, maxPlayers: 2, seatsLeft: guestHere ? 0 : 1 };
+}
+
+const socialHub = new SocialHub(socialService, { getRoomInfo });
+socialWss.on('connection', (ws) => socialHub.handleConnection(ws));
+
+const shutdown = () => {
+  socialStore.flush();
+  process.exit(0);
+};
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
 // Helper to broadcast personalized sanitized view to each player
 function broadcastRoomState(room: OnlineRoom) {
   const isPlaying = room.phase === 'PLAYING';
@@ -266,8 +300,8 @@ function broadcastRoomState(room: OnlineRoom) {
         questions: room.questions,
         winnerRole: room.winnerRole,
         correctGuess: room.correctGuess,
-        host: { name: room.host.name, score: room.host.score, isReady: Boolean(room.hostChosenForGuest), connected: isLive(room.host) },
-        guest: room.guest ? { name: room.guest.name, score: room.guest.score, isReady: Boolean(room.guestChosenForHost), connected: isLive(room.guest) } : undefined,
+        host: { name: room.host.name, score: room.host.score, isReady: Boolean(room.hostChosenForGuest) },
+        guest: room.guest ? { name: room.guest.name, score: room.guest.score, isReady: Boolean(room.guestChosenForHost) } : undefined,
         pendingGuess: room.pendingGuess,
         pendingQuestion: room.pendingQuestion,
         // Secret picture held by Host (secret to host unless REVEAL):
@@ -295,8 +329,8 @@ function broadcastRoomState(room: OnlineRoom) {
         questions: room.questions,
         winnerRole: room.winnerRole,
         correctGuess: room.correctGuess,
-        host: { name: room.host.name, score: room.host.score, isReady: Boolean(room.hostChosenForGuest), connected: isLive(room.host) },
-        guest: { name: room.guest.name, score: room.guest.score, isReady: Boolean(room.guestChosenForHost), connected: isLive(room.guest) },
+        host: { name: room.host.name, score: room.host.score, isReady: Boolean(room.hostChosenForGuest) },
+        guest: { name: room.guest.name, score: room.guest.score, isReady: Boolean(room.guestChosenForHost) },
         pendingGuess: room.pendingGuess,
         pendingQuestion: room.pendingQuestion,
         // Secret picture held by Guest (secret to guest unless REVEAL):
@@ -413,7 +447,7 @@ wss.on('connection', (ws) => {
 
         const newRoom: OnlineRoom = {
           code,
-          host: { ws, id: 'host-' + Date.now(), name: msg.playerName || 'Player 1', score: 0, token: newToken() },
+          host: { ws, id: 'host-' + Date.now(), name: msg.playerName || 'Player 1', score: 0 },
           category: msg.category,
           targetScore: msg.targetScore || 3,
           roundNumber: 1,
@@ -423,7 +457,7 @@ wss.on('connection', (ws) => {
         };
 
         rooms.set(code, newRoom);
-        ws.send(JSON.stringify({ type: 'ROOM_CREATED', roomCode: code, role: 'host', token: newRoom.host.token }));
+        ws.send(JSON.stringify({ type: 'ROOM_CREATED', roomCode: code, role: 'host' }));
         broadcastRoomState(newRoom);
       }
 
@@ -436,55 +470,18 @@ wss.on('connection', (ws) => {
           return;
         }
 
-        const guestName = msg.playerName || 'Player 2';
-        if (room.guest) {
-          // The seat belongs to somebody: only that same person (same name) can take it back,
-          // and only while their connection is down.
-          if (isLive(room.guest) || room.guest.name !== guestName) {
-            ws.send(JSON.stringify({ type: 'ERROR', message: 'Room is full' }));
-            return;
-          }
-          if (room.guest.graceTimer) clearTimeout(room.guest.graceTimer);
-          room.guest.ws = ws;
-        } else {
-          room.guest = { ws, id: 'guest-' + Date.now(), name: guestName, score: 0, token: newToken() };
-        }
-
         userRoomCode = code;
         userRole = 'guest';
 
-        ws.send(JSON.stringify({ type: 'ROOM_JOINED', roomCode: code, role: 'guest', token: room.guest.token }));
-        broadcastRoomState(room);
-      }
+        room.guest = {
+          ws,
+          id: 'guest-' + Date.now(),
+          name: msg.playerName || 'Player 2',
+          score: 0,
+        };
 
-      // 2B. Take a seat back after a refresh / dropped connection (secret token from ROOM_CREATED / ROOM_JOINED)
-      else if (msg.type === 'RESUME_ROOM') {
-        const code = String(msg.code || '').toUpperCase();
-        const token = String(msg.token || '');
-        const room = rooms.get(code);
-        const role: 'host' | 'guest' | null =
-          room && token && room.host.token === token ? 'host' : room?.guest && token && room.guest.token === token ? 'guest' : null;
-        if (!room || !role) {
-          ws.send(JSON.stringify({ type: 'RESUME_FAILED', reason: room ? 'bad-token' : 'no-room' }));
-          return;
-        }
-        const seat = role === 'host' ? room.host : room.guest!;
-        if (seat.graceTimer) clearTimeout(seat.graceTimer);
-        const oldWs = seat.ws;
-        seat.ws = ws; // from now on the old socket (if any) is stale: its close event is ignored
-        if (oldWs && oldWs !== ws && oldWs.readyState === WebSocket.OPEN) oldWs.close();
-        userRoomCode = code;
-        userRole = role;
-        ws.send(JSON.stringify({ type: 'ROOM_RESUMED', roomCode: code, role }));
+        ws.send(JSON.stringify({ type: 'ROOM_JOINED', roomCode: code, role: 'guest' }));
         broadcastRoomState(room);
-      }
-
-      // 2C. Leave on purpose (the seat is freed right away)
-      else if (msg.type === 'LEAVE_ROOM') {
-        const room = userRoomCode ? rooms.get(userRoomCode) : undefined;
-        if (room && userRole) dropSeat(room, userRole);
-        userRoomCode = null;
-        userRole = null;
       }
 
       // 3. Start Secret Picture Selection Phase
@@ -706,45 +703,27 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    mpClose(mpCtx, ws);
-    if (!userRoomCode || !userRole) return;
-    const room = rooms.get(userRoomCode);
-    if (!room) return;
-    const role = userRole;
-    const seat = role === 'host' ? room.host : room.guest;
-    // A newer socket already took this seat (refresh / reconnect), or the seat is gone: nothing to do.
-    if (!seat || seat.ws !== ws) return;
-
-    // Abrupt disconnect: tell the other player's voice engine so it resets cleanly
-    // and waits for this player to come back (no stale connection, no endless spinner).
-    const other = role === 'host' ? room.guest : room.host;
-    if (isLive(other)) {
-      other!.ws!.send(JSON.stringify({ type: 'VOICE_SIGNAL', from: role, fromRole: role, signal: { type: 'bye' } }));
+    mpClose(mpCtx);
+    if (userRoomCode) {
+      const room = rooms.get(userRoomCode);
+      if (room) {
+        // Abrupt disconnect: tell the other player's voice engine so it resets cleanly
+        // and waits for this player to come back (no stale connection, no endless spinner).
+        const otherWs = userRole === 'host' ? room.guest?.ws : room.host.ws;
+        if (otherWs && otherWs.readyState === WebSocket.OPEN) {
+          otherWs.send(JSON.stringify({ type: 'VOICE_SIGNAL', from: userRole, fromRole: userRole, signal: { type: 'bye' } }));
+        }
+        if (userRole === 'host') {
+          // If host leaves, notify guest
+          room.guest?.ws?.send(JSON.stringify({ type: 'HOST_DISCONNECTED' }));
+        } else if (userRole === 'guest') {
+          room.guest = undefined;
+          broadcastRoomState(room);
+        }
+      }
     }
-
-    // Keep the seat for a while so a refresh / network blip does not end the match.
-    seat.ws = undefined;
-    if (seat.graceTimer) clearTimeout(seat.graceTimer);
-    seat.graceTimer = setTimeout(() => dropSeat(room, role), RESUME_GRACE_MS);
-    broadcastRoomState(room);
   });
 });
-
-/** The seat is really gone: the player left on purpose, or did not come back in time. */
-function dropSeat(room: OnlineRoom, role: 'host' | 'guest') {
-  if (rooms.get(room.code) !== room) return;
-  if (role === 'guest') {
-    if (room.guest?.graceTimer) clearTimeout(room.guest.graceTimer);
-    room.guest = undefined;
-    broadcastRoomState(room);
-    return;
-  }
-  // The host is gone: the room is over.
-  if (room.host.graceTimer) clearTimeout(room.host.graceTimer);
-  if (room.guest?.graceTimer) clearTimeout(room.guest.graceTimer);
-  if (isLive(room.guest)) room.guest!.ws!.send(JSON.stringify({ type: 'HOST_DISCONNECTED' }));
-  rooms.delete(room.code);
-}
 
 // Mount Vite in dev mode or serve static files in production
 async function startServer() {

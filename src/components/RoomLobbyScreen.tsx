@@ -3,6 +3,7 @@ import { Copy, Check, ArrowLeft, Share2, Wifi } from 'lucide-react';
 import { CategoryDefinition } from '../types/game';
 import { sound } from '../utils/audio';
 import { onlineService, OnlineRoomData } from '../services/onlineGame';
+import { FriendInvitePanel } from './social/FriendInvitePanel';
 
 interface RoomLobbyScreenProps {
   roomCode: string;
@@ -26,7 +27,8 @@ export const RoomLobbyScreen: React.FC<RoomLobbyScreenProps> = ({
 }) => {
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
-  const [roomData, setRoomData] = useState<OnlineRoomData | null>(null);
+  // start from the latest known room state: the server's first ROOM_UPDATE arrives before this screen mounts
+  const [roomData, setRoomData] = useState<OnlineRoomData | null>(() => onlineService.getLastRoom());
 
   useEffect(() => {
     const unsubscribe = onlineService.subscribe((event) => {
@@ -34,6 +36,11 @@ export const RoomLobbyScreen: React.FC<RoomLobbyScreenProps> = ({
         setRoomData(event.room);
       }
     });
+
+    // The server's first ROOM_UPDATE can arrive after the first render but before this effect has
+    // subscribed. Read the latest known state again now that we are subscribed: nothing can slip through.
+    const latest = onlineService.getLastRoom();
+    if (latest) setRoomData(latest);
 
     return () => {
       unsubscribe();
@@ -90,49 +97,62 @@ export const RoomLobbyScreen: React.FC<RoomLobbyScreenProps> = ({
       <div className="game-card-surface p-5 sm:p-6 border border-slate-700/60 shadow-2xl space-y-4">
         <div>
           <h2 className="text-2xl font-black text-white tracking-tight">
-            {lang === 'ar' ? 'شارك كود الغرفة مع خصمك' : 'Share Room Code'}
+            {isHost ? (lang === 'ar' ? 'ادعُ خصمك للعب' : 'Invite your opponent') : lang === 'ar' ? 'أنت داخل الغرفة ✅' : "You're in the room ✅"}
           </h2>
           <p className="text-xs text-slate-400 font-bold mt-1">
-            {lang === 'ar' ? 'لينضم إليك ويبدأ اللعب' : 'so they can join your match'}
+            {isHost
+              ? lang === 'ar' ? 'لينضم إليك ويبدأ اللعب' : 'so they can join your match'
+              : lang === 'ar' ? 'استنى المضيف يبدأ اللعبة' : 'Waiting for the host to start the game'}
           </p>
         </div>
 
-        {/* Big Code Container */}
-        <div className="bg-[#1b2150]/60 backdrop-blur-md rounded-2xl p-4 border border-slate-700/80 space-y-3 shadow-inner">
-          <div className="flex items-center justify-center gap-3">
-            <span className="text-4xl font-black text-amber-400 font-mono tracking-widest select-all">
-              {roomCode}
-            </span>
-            <button
-              type="button"
-              onClick={handleCopyCode}
-              title="Copy"
-              className="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-xl border border-indigo-300/30 cursor-pointer"
-            >
-              {copiedCode ? <Check className="w-5 h-5 text-emerald-400" /> : <Copy className="w-5 h-5" />}
-            </button>
-          </div>
+        {/* Friends: invite straight from the game (no code needed) */}
+        {isHost && joinedCount < 2 && <FriendInvitePanel code={roomCode} lang={lang} />}
 
-          <div className="flex items-center justify-center gap-2 pt-1">
-            <button
-              type="button"
-              onClick={handleCopyCode}
-              className="flex-1 py-2.5 px-3 btn-premium-surface text-slate-300 text-xs font-bold rounded-xl inline-flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
-            >
-              <Copy className="w-3.5 h-3.5 text-blue-400" />
-              <span>{copiedCode ? (lang === 'ar' ? 'تم النسخ!' : 'Copied!') : (lang === 'ar' ? 'نسخ الكود' : 'Copy Code')}</span>
-            </button>
+        {/* the invited player has no use for the code: only the host sees this fallback */}
+        {isHost && (
+          <>
+          {/* Big Code Container (fallback for someone who is not on your friends list) */}
+          <div className="bg-[#1b2150]/60 backdrop-blur-md rounded-2xl p-4 border border-slate-700/80 space-y-3 shadow-inner">
+            <div className="text-[11px] font-bold text-slate-400">
+              {lang === 'ar' ? '🔑 أو شارك كود الغرفة (لو صاحبك مش في أصدقائك)' : '🔑 Or share the room code (for someone not on your friends list)'}
+            </div>
+            <div className="flex items-center justify-center gap-3">
+              <span className="text-4xl font-black text-amber-400 font-mono tracking-widest select-all">
+                {roomCode}
+              </span>
+              <button
+                type="button"
+                onClick={handleCopyCode}
+                title="Copy"
+                className="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-xl border border-indigo-300/30 cursor-pointer"
+              >
+                {copiedCode ? <Check className="w-5 h-5 text-emerald-400" /> : <Copy className="w-5 h-5" />}
+              </button>
+            </div>
 
-            <button
-              type="button"
-              onClick={handleCopyLink}
-              className="flex-1 py-2.5 px-3 btn-premium-surface text-slate-300 text-xs font-bold rounded-xl inline-flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
-            >
-              <Share2 className="w-3.5 h-3.5 text-purple-400" />
-              <span>{copiedLink ? (lang === 'ar' ? 'تم النسخ!' : 'Copied!') : (lang === 'ar' ? 'مشاركة الرابط' : 'Share Link')}</span>
-            </button>
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleCopyCode}
+                className="flex-1 py-2.5 px-3 btn-premium-surface text-slate-300 text-xs font-bold rounded-xl inline-flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Copy className="w-3.5 h-3.5 text-blue-400" />
+                <span>{copiedCode ? (lang === 'ar' ? 'تم النسخ!' : 'Copied!') : (lang === 'ar' ? 'نسخ الكود' : 'Copy Code')}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                className="flex-1 py-2.5 px-3 btn-premium-surface text-slate-300 text-xs font-bold rounded-xl inline-flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Share2 className="w-3.5 h-3.5 text-purple-400" />
+                <span>{copiedLink ? (lang === 'ar' ? 'تم النسخ!' : 'Copied!') : (lang === 'ar' ? 'مشاركة الرابط' : 'Share Link')}</span>
+              </button>
+            </div>
           </div>
-        </div>
+          </>
+        )}
 
         {/* Player Cards (2, 3, or 4 players) */}
         <div className="space-y-2 text-start">
@@ -141,7 +161,7 @@ export const RoomLobbyScreen: React.FC<RoomLobbyScreenProps> = ({
               {lang === 'ar' ? 'اللاعبون في الغرفة' : 'Players in Room'}
             </span>
             <span className="text-[11px] font-bold text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/20">
-              {roomData?.players ? roomData.players.length : 1}/{roomData?.maxPlayers || 2} {lang === 'ar' ? 'لاعبين' : 'Players'}
+              {joinedCount}/{roomData?.maxPlayers || 2} {lang === 'ar' ? 'لاعبين' : 'Players'}
             </span>
           </div>
 
