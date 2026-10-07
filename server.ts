@@ -192,7 +192,15 @@ interface RoomPlayer {
   id: string;
   name: string;
   score: number;
+  /** Secret that lets this player take their seat back after a refresh / dropped connection. */
+  token: string;
+  graceTimer?: ReturnType<typeof setTimeout>;
 }
+
+/** How long a seat is kept for a player whose connection dropped (refresh, phone sleep, bad network). */
+const RESUME_GRACE_MS = Number(process.env.RESUME_GRACE_MS) || 2 * 60 * 1000;
+const newToken = () => crypto.randomBytes(16).toString('hex');
+const isLive = (p?: RoomPlayer) => Boolean(p?.ws && p.ws.readyState === WebSocket.OPEN);
 
 interface OnlineRoom {
   code: string;
@@ -258,8 +266,8 @@ function broadcastRoomState(room: OnlineRoom) {
         questions: room.questions,
         winnerRole: room.winnerRole,
         correctGuess: room.correctGuess,
-        host: { name: room.host.name, score: room.host.score, isReady: Boolean(room.hostChosenForGuest) },
-        guest: room.guest ? { name: room.guest.name, score: room.guest.score, isReady: Boolean(room.guestChosenForHost) } : undefined,
+        host: { name: room.host.name, score: room.host.score, isReady: Boolean(room.hostChosenForGuest), connected: isLive(room.host) },
+        guest: room.guest ? { name: room.guest.name, score: room.guest.score, isReady: Boolean(room.guestChosenForHost), connected: isLive(room.guest) } : undefined,
         pendingGuess: room.pendingGuess,
         pendingQuestion: room.pendingQuestion,
         // Secret picture held by Host (secret to host unless REVEAL):
@@ -287,8 +295,8 @@ function broadcastRoomState(room: OnlineRoom) {
         questions: room.questions,
         winnerRole: room.winnerRole,
         correctGuess: room.correctGuess,
-        host: { name: room.host.name, score: room.host.score, isReady: Boolean(room.hostChosenForGuest) },
-        guest: { name: room.guest.name, score: room.guest.score, isReady: Boolean(room.guestChosenForHost) },
+        host: { name: room.host.name, score: room.host.score, isReady: Boolean(room.hostChosenForGuest), connected: isLive(room.host) },
+        guest: { name: room.guest.name, score: room.guest.score, isReady: Boolean(room.guestChosenForHost), connected: isLive(room.guest) },
         pendingGuess: room.pendingGuess,
         pendingQuestion: room.pendingQuestion,
         // Secret picture held by Guest (secret to guest unless REVEAL):
@@ -405,7 +413,7 @@ wss.on('connection', (ws) => {
 
         const newRoom: OnlineRoom = {
           code,
-          host: { ws, id: 'host-' + Date.now(), name: msg.playerName || 'Player 1', score: 0 },
+          host: { ws, id: 'host-' + Date.now(), name: msg.playerName || 'Player 1', score: 0, token: newToken() },
           category: msg.category,
           targetScore: msg.targetScore || 3,
           roundNumber: 1,
@@ -415,7 +423,7 @@ wss.on('connection', (ws) => {
         };
 
         rooms.set(code, newRoom);
-        ws.send(JSON.stringify({ type: 'ROOM_CREATED', roomCode: code, role: 'host' }));
+        ws.send(JSON.stringify({ type: 'ROOM_CREATED', roomCode: code, role: 'host', token: newRoom.host.token }));
         broadcastRoomState(newRoom);
       }
 
@@ -428,18 +436,55 @@ wss.on('connection', (ws) => {
           return;
         }
 
+        const guestName = msg.playerName || 'Player 2';
+        if (room.guest) {
+          // The seat belongs to somebody: only that same person (same name) can take it back,
+          // and only while their connection is down.
+          if (isLive(room.guest) || room.guest.name !== guestName) {
+            ws.send(JSON.stringify({ type: 'ERROR', message: 'Room is full' }));
+            return;
+          }
+          if (room.guest.graceTimer) clearTimeout(room.guest.graceTimer);
+          room.guest.ws = ws;
+        } else {
+          room.guest = { ws, id: 'guest-' + Date.now(), name: guestName, score: 0, token: newToken() };
+        }
+
         userRoomCode = code;
         userRole = 'guest';
 
-        room.guest = {
-          ws,
-          id: 'guest-' + Date.now(),
-          name: msg.playerName || 'Player 2',
-          score: 0,
-        };
-
-        ws.send(JSON.stringify({ type: 'ROOM_JOINED', roomCode: code, role: 'guest' }));
+        ws.send(JSON.stringify({ type: 'ROOM_JOINED', roomCode: code, role: 'guest', token: room.guest.token }));
         broadcastRoomState(room);
+      }
+
+      // 2B. Take a seat back after a refresh / dropped connection (secret token from ROOM_CREATED / ROOM_JOINED)
+      else if (msg.type === 'RESUME_ROOM') {
+        const code = String(msg.code || '').toUpperCase();
+        const token = String(msg.token || '');
+        const room = rooms.get(code);
+        const role: 'host' | 'guest' | null =
+          room && token && room.host.token === token ? 'host' : room?.guest && token && room.guest.token === token ? 'guest' : null;
+        if (!room || !role) {
+          ws.send(JSON.stringify({ type: 'RESUME_FAILED', reason: room ? 'bad-token' : 'no-room' }));
+          return;
+        }
+        const seat = role === 'host' ? room.host : room.guest!;
+        if (seat.graceTimer) clearTimeout(seat.graceTimer);
+        const oldWs = seat.ws;
+        seat.ws = ws; // from now on the old socket (if any) is stale: its close event is ignored
+        if (oldWs && oldWs !== ws && oldWs.readyState === WebSocket.OPEN) oldWs.close();
+        userRoomCode = code;
+        userRole = role;
+        ws.send(JSON.stringify({ type: 'ROOM_RESUMED', roomCode: code, role }));
+        broadcastRoomState(room);
+      }
+
+      // 2C. Leave on purpose (the seat is freed right away)
+      else if (msg.type === 'LEAVE_ROOM') {
+        const room = userRoomCode ? rooms.get(userRoomCode) : undefined;
+        if (room && userRole) dropSeat(room, userRole);
+        userRoomCode = null;
+        userRole = null;
       }
 
       // 3. Start Secret Picture Selection Phase
@@ -661,27 +706,45 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    mpClose(mpCtx);
-    if (userRoomCode) {
-      const room = rooms.get(userRoomCode);
-      if (room) {
-        // Abrupt disconnect: tell the other player's voice engine so it resets cleanly
-        // and waits for this player to come back (no stale connection, no endless spinner).
-        const otherWs = userRole === 'host' ? room.guest?.ws : room.host.ws;
-        if (otherWs && otherWs.readyState === WebSocket.OPEN) {
-          otherWs.send(JSON.stringify({ type: 'VOICE_SIGNAL', from: userRole, fromRole: userRole, signal: { type: 'bye' } }));
-        }
-        if (userRole === 'host') {
-          // If host leaves, notify guest
-          room.guest?.ws?.send(JSON.stringify({ type: 'HOST_DISCONNECTED' }));
-        } else if (userRole === 'guest') {
-          room.guest = undefined;
-          broadcastRoomState(room);
-        }
-      }
+    mpClose(mpCtx, ws);
+    if (!userRoomCode || !userRole) return;
+    const room = rooms.get(userRoomCode);
+    if (!room) return;
+    const role = userRole;
+    const seat = role === 'host' ? room.host : room.guest;
+    // A newer socket already took this seat (refresh / reconnect), or the seat is gone: nothing to do.
+    if (!seat || seat.ws !== ws) return;
+
+    // Abrupt disconnect: tell the other player's voice engine so it resets cleanly
+    // and waits for this player to come back (no stale connection, no endless spinner).
+    const other = role === 'host' ? room.guest : room.host;
+    if (isLive(other)) {
+      other!.ws!.send(JSON.stringify({ type: 'VOICE_SIGNAL', from: role, fromRole: role, signal: { type: 'bye' } }));
     }
+
+    // Keep the seat for a while so a refresh / network blip does not end the match.
+    seat.ws = undefined;
+    if (seat.graceTimer) clearTimeout(seat.graceTimer);
+    seat.graceTimer = setTimeout(() => dropSeat(room, role), RESUME_GRACE_MS);
+    broadcastRoomState(room);
   });
 });
+
+/** The seat is really gone: the player left on purpose, or did not come back in time. */
+function dropSeat(room: OnlineRoom, role: 'host' | 'guest') {
+  if (rooms.get(room.code) !== room) return;
+  if (role === 'guest') {
+    if (room.guest?.graceTimer) clearTimeout(room.guest.graceTimer);
+    room.guest = undefined;
+    broadcastRoomState(room);
+    return;
+  }
+  // The host is gone: the room is over.
+  if (room.host.graceTimer) clearTimeout(room.host.graceTimer);
+  if (room.guest?.graceTimer) clearTimeout(room.guest.graceTimer);
+  if (isLive(room.guest)) room.guest!.ws!.send(JSON.stringify({ type: 'HOST_DISCONNECTED' }));
+  rooms.delete(room.code);
+}
 
 // Mount Vite in dev mode or serve static files in production
 async function startServer() {

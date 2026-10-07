@@ -12,6 +12,7 @@
 //   - the turn then passes to the next player; the match ends when nobody has anything left to guess.
 
 import { WebSocket } from 'ws';
+import crypto from 'crypto';
 import {
   ScheduleState,
   SchedulePlayer,
@@ -27,6 +28,9 @@ const ANSWERS: Answer[] = ['YES', 'NO', 'SOMETIMES', 'NOT_SURE'];
 interface MpPlayer {
   id: string;
   name: string;
+  /** Secret that lets this player take their seat back after a refresh / dropped connection. */
+  token: string;
+  graceTimer?: ReturnType<typeof setTimeout>;
   ws?: WebSocket;
   connected: boolean;
   score: number;
@@ -81,6 +85,12 @@ export interface MpCtx {
 }
 
 const rooms = new Map<string, MpRoom>();
+
+/** In the lobby a dropped player keeps their seat this long (a refresh must not close the room). */
+const LOBBY_GRACE_MS = Number(process.env.RESUME_GRACE_MS) || 30_000;
+/** During a match the game waits this long for a dropped player (a refresh must not skip their turn). */
+const GAME_GRACE_MS = Number(process.env.RESUME_GRACE_MS) || 20_000;
+const newToken = () => crypto.randomBytes(16).toString('hex');
 
 export const mpHas = (code?: string) => Boolean(code && rooms.has(code.toUpperCase()));
 export const mpRoomCount = () => rooms.size;
@@ -218,6 +228,22 @@ function reassignHostIfNeeded(room: MpRoom) {
   if (next) room.hostId = next.id;
 }
 
+/** A returning player takes their seat (and their score, picture and solved pictures) back. */
+function seatBack(room: MpRoom, player: MpPlayer, ws: WebSocket, ctx: MpCtx) {
+  if (player.graceTimer) clearTimeout(player.graceTimer);
+  if (room.cleanupTimer) clearTimeout(room.cleanupTimer);
+  const oldWs = player.ws;
+  player.ws = ws; // the old socket (if it is still open) is stale from now on
+  player.connected = true;
+  if (oldWs && oldWs !== ws && oldWs.readyState === WebSocket.OPEN) oldWs.close();
+  ctx.code = room.code;
+  ctx.playerId = player.id;
+  reassignHostIfNeeded(room);
+  safeSend(ws, { type: 'MP_JOINED', roomCode: room.code, playerId: player.id, maxPlayers: room.maxPlayers, token: player.token, rejoined: true });
+  maybeStartPlaying(room);
+  broadcast(room);
+}
+
 // ---------- message handling ----------
 
 /** Returns true when the message belonged to the multiplayer system (and was handled). */
@@ -238,6 +264,7 @@ export function mpHandle(ws: WebSocket, ctx: MpCtx, msg: any): boolean {
     }
     const host: MpPlayer = {
       id: 'p-1',
+      token: newToken(),
       name: clean(msg.playerName, 24) || 'Player 1',
       ws,
       connected: true,
@@ -259,7 +286,7 @@ export function mpHandle(ws: WebSocket, ctx: MpCtx, msg: any): boolean {
     rooms.set(code, room);
     ctx.code = code;
     ctx.playerId = host.id;
-    safeSend(ws, { type: 'MP_JOINED', roomCode: code, playerId: host.id, maxPlayers });
+    safeSend(ws, { type: 'MP_JOINED', roomCode: code, playerId: host.id, maxPlayers, token: host.token });
     broadcast(room);
     return true;
   }
@@ -272,15 +299,7 @@ export function mpHandle(ws: WebSocket, ctx: MpCtx, msg: any): boolean {
     // Rejoin: same name, was disconnected -> take the seat back (during or after a drop).
     const returning = room.players.find((p) => !p.connected && p.name === name);
     if (returning) {
-      returning.ws = ws;
-      returning.connected = true;
-      if (room.cleanupTimer) clearTimeout(room.cleanupTimer);
-      ctx.code = room.code;
-      ctx.playerId = returning.id;
-      reassignHostIfNeeded(room);
-      safeSend(ws, { type: 'MP_JOINED', roomCode: room.code, playerId: returning.id, maxPlayers: room.maxPlayers, rejoined: true });
-      maybeStartPlaying(room);
-      broadcast(room);
+      seatBack(room, returning, ws, ctx);
       return true;
     }
     if (room.phase !== 'LOBBY') {
@@ -295,12 +314,25 @@ export function mpHandle(ws: WebSocket, ctx: MpCtx, msg: any): boolean {
       safeSend(ws, { type: 'ERROR', message: 'Name already taken in this room' });
       return true;
     }
-    const player: MpPlayer = { id: `p-${room.nextSeq++}`, name, ws, connected: true, score: 0, solved: {} };
+    const player: MpPlayer = { id: `p-${room.nextSeq++}`, token: newToken(), name, ws, connected: true, score: 0, solved: {} };
     room.players.push(player);
     ctx.code = room.code;
     ctx.playerId = player.id;
-    safeSend(ws, { type: 'MP_JOINED', roomCode: room.code, playerId: player.id, maxPlayers: room.maxPlayers });
+    safeSend(ws, { type: 'MP_JOINED', roomCode: room.code, playerId: player.id, maxPlayers: room.maxPlayers, token: player.token });
     broadcast(room);
+    return true;
+  }
+
+  // Resume: take the seat back with the secret token (page refresh, phone sleep, network blip).
+  if (type === 'MP_RESUME') {
+    const room = rooms.get(clean(msg.code, 8).toUpperCase());
+    const token = typeof msg.token === 'string' ? msg.token : '';
+    const player = room && token ? room.players.find((p) => p.token === token) : undefined;
+    if (!room || !player) {
+      safeSend(ws, { type: 'RESUME_FAILED', reason: room ? 'bad-token' : 'no-room' });
+      return true;
+    }
+    seatBack(room, player, ws, ctx);
     return true;
   }
 
@@ -320,7 +352,7 @@ export function mpHandle(ws: WebSocket, ctx: MpCtx, msg: any): boolean {
     }
 
     case 'MP_START':
-      if (room.phase === 'LOBBY' && me.id === room.hostId && room.players.length === room.maxPlayers) {
+      if (room.phase === 'LOBBY' && me.id === room.hostId && room.players.length === room.maxPlayers && room.players.every((p) => p.connected)) {
         room.phase = 'CHOOSING';
         broadcast(room);
       }
@@ -459,7 +491,7 @@ export function mpHandle(ws: WebSocket, ctx: MpCtx, msg: any): boolean {
       return true;
 
     case 'MP_LEAVE':
-      mpClose(ctx);
+      mpClose(ctx, ws, true); // on purpose: the seat is freed right away
       return true;
 
     default:
@@ -469,13 +501,34 @@ export function mpHandle(ws: WebSocket, ctx: MpCtx, msg: any): boolean {
   }
 }
 
-/** The player's socket closed or they left. */
-export function mpClose(ctx: MpCtx) {
+/** Lobby only: the player is really gone (left on purpose or did not come back in time). */
+function removeFromLobby(room: MpRoom, me: MpPlayer) {
+  if (rooms.get(room.code) !== room || room.phase !== 'LOBBY') return;
+  if (me.graceTimer) clearTimeout(me.graceTimer);
+  if (me.id === room.hostId) {
+    // Host left before the game: the room closes.
+    room.players.forEach((p) => {
+      if (p.id !== me.id) safeSend(p.ws, { type: 'MP_ROOM_CLOSED' });
+      if (p.graceTimer) clearTimeout(p.graceTimer);
+    });
+    rooms.delete(room.code);
+    return;
+  }
+  room.players = room.players.filter((p) => p.id !== me.id);
+  broadcast(room);
+}
+
+/**
+ * The player's socket closed (`leave` = false) or they chose to leave (`leave` = true).
+ * `ws` is the socket that closed: if the player already came back on a newer socket it is ignored.
+ */
+export function mpClose(ctx: MpCtx, ws?: WebSocket, leave = false) {
   const room = ctx.code ? rooms.get(ctx.code) : undefined;
   const me = room?.players.find((p) => p.id === ctx.playerId);
   ctx.code = null;
   ctx.playerId = null;
   if (!room || !me) return;
+  if (ws && me.ws !== ws) return; // stale socket (the player resumed on a new one)
 
   // Tell the other players' voice engines so they reset cleanly (no stale connection).
   room.players.forEach((p) => {
@@ -483,22 +536,37 @@ export function mpClose(ctx: MpCtx) {
   });
 
   if (room.phase === 'LOBBY') {
-    if (me.id === room.hostId) {
-      // Host left before the game: the room closes.
-      room.players.forEach((p) => {
-        if (p.id !== me.id) safeSend(p.ws, { type: 'MP_ROOM_CLOSED' });
-      });
-      rooms.delete(room.code);
+    if (leave) {
+      removeFromLobby(room, me);
       return;
     }
-    room.players = room.players.filter((p) => p.id !== me.id);
+    // Dropped connection (refresh / phone sleep): keep the seat for a short while.
+    me.connected = false;
+    me.ws = undefined;
+    if (me.graceTimer) clearTimeout(me.graceTimer);
+    me.graceTimer = setTimeout(() => removeFromLobby(room, me), LOBBY_GRACE_MS);
     broadcast(room);
     return;
   }
 
-  // Mid-game: keep the seat so the player can come back with the same name.
+  // Mid-game: keep the seat so the player can come back (same token, or same name).
   me.connected = false;
   me.ws = undefined;
+  if (me.graceTimer) clearTimeout(me.graceTimer);
+
+  if (room.phase === 'PLAYING' && !leave) {
+    // Give the player a moment to come back (page refresh, phone sleep) before the game moves on
+    // without them. Everybody sees them as disconnected meanwhile.
+    me.graceTimer = setTimeout(() => settleAbsence(room, me), GAME_GRACE_MS);
+    broadcast(room);
+    return;
+  }
+  settleAbsence(room, me);
+}
+
+/** The player did not come back in time (or the game has nothing to wait for): carry on without them. */
+function settleAbsence(room: MpRoom, me: MpPlayer) {
+  if (rooms.get(room.code) !== room || me.connected) return;
   reassignHostIfNeeded(room);
 
   if (room.phase === 'PLAYING') {
@@ -516,6 +584,7 @@ export function mpClose(ctx: MpCtx) {
 
   const anyone = room.players.some((p) => p.connected);
   if (!anyone) {
+    if (room.cleanupTimer) clearTimeout(room.cleanupTimer);
     room.cleanupTimer = setTimeout(() => {
       if (!room.players.some((p) => p.connected)) rooms.delete(room.code);
     }, 2 * 60 * 1000);
