@@ -18,7 +18,17 @@ import {
 } from './types/game';
 import { CATEGORIES, GENERAL_CATEGORY } from './data/categories';
 import { sound } from './utils/audio';
-import { onlineService, OnlineRoomData } from './services/onlineGame';
+import { onlineService, OnlineRoomData, loadSession } from './services/onlineGame';
+import {
+  OfflineSave,
+  categoryById,
+  clearOffline,
+  isRestorablePhase,
+  loadOffline,
+  loadPrefs,
+  saveOffline,
+  savePrefs,
+} from './utils/gameStorage';
 import { liveVoiceManager } from './utils/webrtcAudio';
 
 import { Header } from './components/Header';
@@ -38,23 +48,37 @@ import { PlayerCountModal, SelectedGameSetupMode } from './components/PlayerCoun
 import { OnlineMultiplayerGame } from './components/OnlineMultiplayerGame';
 
 export default function App() {
-  const [lang, setLang] = useState<'ar' | 'en'>('ar');
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  // What survives a page refresh: language/sound, a same-device match (saved here on the device),
+  // or an online seat (the server keeps the match; we only keep the secret token).
+  const [prefs] = useState(loadPrefs);
+  const [savedOnline] = useState(() => loadSession());
+  const [saved] = useState<OfflineSave | null>(() => (loadSession() ? null : loadOffline()));
+  // Restoring an online room: show a short "restoring" screen instead of flashing the home screen.
+  const [isRestoring, setIsRestoring] = useState<boolean>(() => {
+    const s = loadSession();
+    if (!s) return false;
+    const urlRoom = new URLSearchParams(window.location.search).get('room');
+    return !urlRoom || urlRoom.toUpperCase() === s.code;
+  });
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const [lang, setLang] = useState<'ar' | 'en'>(prefs.lang);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(prefs.soundEnabled);
   const [isRulesOpen, setIsRulesOpen] = useState<boolean>(false);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState<boolean>(false);
   const [initialJoinCode, setInitialJoinCode] = useState<string>('');
 
   // Core Game State
-  const [gamePhase, setGamePhase] = useState<GamePhase>('HOME');
-  const [gameMode, setGameMode] = useState<GameMode>('PASS_AND_PLAY');
+  const [gamePhase, setGamePhase] = useState<GamePhase>(saved?.gamePhase ?? 'HOME');
+  const [gameMode, setGameMode] = useState<GameMode>(saved?.gameMode ?? 'PASS_AND_PLAY');
   const [roomCode, setRoomCode] = useState<string>('A7K92');
-  const [currentCategory, setCurrentCategory] = useState<CategoryDefinition>(GENERAL_CATEGORY);
-  const [targetScore, setTargetScore] = useState<number>(3);
-  const [roundNumber, setRoundNumber] = useState<number>(1);
+  const [currentCategory, setCurrentCategory] = useState<CategoryDefinition>(saved ? categoryById(saved.categoryId) : GENERAL_CATEGORY);
+  const [targetScore, setTargetScore] = useState<number>(saved?.targetScore ?? 3);
+  const [roundNumber, setRoundNumber] = useState<number>(saved?.roundNumber ?? 1);
 
   // Player Count & Multiplayer Mode (3–4 Players)
   const [isPlayerCountModalOpen, setIsPlayerCountModalOpen] = useState<boolean>(false);
-  const [playerCount, setPlayerCount] = useState<PlayerCount>(2);
+  const [playerCount, setPlayerCount] = useState<PlayerCount>(saved?.playerCount ?? 2);
   // 3 / 4 players online: the live room state pushed by the server (every player on their own device)
   const [mpRoom, setMpRoom] = useState<MpRoomState | null>(null);
 
@@ -70,51 +94,146 @@ export default function App() {
   } | null>(null);
 
   // Players (Dynamic - populated upon entering/creating game)
-  const [player1, setPlayer1] = useState<Player>({
-    id: 'p1',
-    name: '',
-    score: 0,
-    avatarColor: 'from-emerald-500 to-emerald-700',
-  });
-  const [player2, setPlayer2] = useState<Player>({
-    id: 'p2',
-    name: '',
-    score: 0,
-    avatarColor: 'from-sky-500 to-sky-700',
-  });
+  const [player1, setPlayer1] = useState<Player>(
+    saved?.player1 ?? {
+      id: 'p1',
+      name: '',
+      score: 0,
+      avatarColor: 'from-emerald-500 to-emerald-700',
+    }
+  );
+  const [player2, setPlayer2] = useState<Player>(
+    saved?.player2 ?? {
+      id: 'p2',
+      name: '',
+      score: 0,
+      avatarColor: 'from-sky-500 to-sky-700',
+    }
+  );
 
   // Cards
-  const [p1Card, setP1Card] = useState<PlayerChoice | null>(null); // held by P1 (chosen by P2)
-  const [p2Card, setP2Card] = useState<PlayerChoice | null>(null); // held by P2 (chosen by P1)
+  const [p1Card, setP1Card] = useState<PlayerChoice | null>(saved?.p1Card ?? null); // held by P1 (chosen by P2)
+  const [p2Card, setP2Card] = useState<PlayerChoice | null>(saved?.p2Card ?? null); // held by P2 (chosen by P1)
 
   // Arena Turn & History
-  const [activePlayerId, setActivePlayerId] = useState<string>('p1');
-  const [questions, setQuestions] = useState<QuestionRecord[]>([]);
+  const [activePlayerId, setActivePlayerId] = useState<string>(saved?.activePlayerId ?? 'p1');
+  const [questions, setQuestions] = useState<QuestionRecord[]>(saved?.questions ?? []);
 
   // Reveal Data
-  const [roundWinnerId, setRoundWinnerId] = useState<string | null>(null);
-  const [correctGuessWord, setCorrectGuessWord] = useState<string>('');
+  const [roundWinnerId, setRoundWinnerId] = useState<string | null>(saved?.roundWinnerId ?? null);
+  const [correctGuessWord, setCorrectGuessWord] = useState<string>(saved?.correctGuessWord ?? '');
 
   // Pass and play privacy interstitial
-  const [showHandoffToP2, setShowHandoffToP2] = useState<boolean>(false);
+  const [showHandoffToP2, setShowHandoffToP2] = useState<boolean>(saved?.showHandoffToP2 ?? false);
 
   useEffect(() => {
     sound.enabled = soundEnabled;
   }, [soundEnabled]);
 
   useEffect(() => {
+    savePrefs({ lang, soundEnabled });
+  }, [lang, soundEnabled]);
+
+  // Same-device matches (pass & play / vs bot) live only on this device: save them after every change
+  // so a refresh brings the match back exactly where it was. Anything else clears the save.
+  useEffect(() => {
+    if (gameMode === 'ROOM_CODE' || !isRestorablePhase(gamePhase) || !player1.name || !player2.name) {
+      clearOffline();
+      return;
+    }
+    saveOffline({
+      v: 1,
+      savedAt: Date.now(),
+      gameMode,
+      playerCount,
+      gamePhase,
+      categoryId: currentCategory.id,
+      targetScore,
+      roundNumber,
+      player1,
+      player2,
+      p1Card,
+      p2Card,
+      activePlayerId,
+      questions,
+      roundWinnerId,
+      correctGuessWord,
+      showHandoffToP2,
+    });
+  }, [gameMode, playerCount, gamePhase, currentCategory, targetScore, roundNumber, player1, player2, p1Card, p2Card, activePlayerId, questions, roundWinnerId, correctGuessWord, showHandoffToP2]);
+
+  // Short message on the home screen (e.g. the room ended while we were away).
+  useEffect(() => {
+    if (!notice) return;
+    const t = window.setTimeout(() => setNotice(null), 6000);
+    return () => window.clearTimeout(t);
+  }, [notice]);
+
+  useEffect(() => {
     document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
     document.documentElement.lang = lang;
   }, [lang]);
 
-  // Check URL query for ?room=CODE
+  // On load: take our seat back in the online room saved on this device (page refresh), or - for an
+  // invite link ?room=CODE that is not our room - open the join screen.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlRoom = params.get('room');
+
+    if (isRestoring && savedOnline) {
+      setGameMode('ROOM_CODE');
+      setRoomCode(savedOnline.code);
+      setOnlineRole(savedOnline.role);
+      setPlayerCount(savedOnline.kind === 'mp' ? savedOnline.maxPlayers ?? 3 : 2);
+      if (savedOnline.kind === '2p') {
+        const set = savedOnline.role === 'host' ? setPlayer1 : setPlayer2;
+        set((p) => ({ ...p, name: savedOnline.name }));
+      }
+      onlineService
+        .resume()
+        .then(() => {
+          if (savedOnline.kind === 'mp') {
+            setMpRoom(null);
+            setGamePhase('MP_ONLINE');
+          }
+          // 2 players: the server now pushes the room state and the phase follows from it.
+          setIsRestoring(false);
+        })
+        .catch(() => {
+          // The room is gone (finished, or the server restarted): back to the start.
+          onlineService.disconnect();
+          setIsRestoring(false);
+          setGameMode('PASS_AND_PLAY');
+          if (urlRoom) {
+            setInitialJoinCode(urlRoom.toUpperCase());
+            setGamePhase('JOIN_GAME');
+          } else {
+            setGamePhase('HOME');
+          }
+          setNotice('ROOM_GONE');
+        });
+      return;
+    }
+
     if (urlRoom) {
       setInitialJoinCode(urlRoom.toUpperCase());
       setGamePhase('JOIN_GAME');
     }
+  }, []);
+
+  // Back on the page after the phone slept / the network dropped: reconnect to the room right away.
+  useEffect(() => {
+    const wake = () => {
+      if (document.visibilityState === 'visible') onlineService.ensureConnected();
+    };
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('online', wake);
+    window.addEventListener('focus', wake);
+    return () => {
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('online', wake);
+      window.removeEventListener('focus', wake);
+    };
   }, []);
 
   // Subscribe to Online WebSocket events
@@ -227,7 +346,9 @@ export default function App() {
         if (room.phase === 'LOBBY') {
           setGamePhase('ROOM_LOBBY');
         } else if (room.phase === 'CHOOSING') {
-          setIsWaitingForRemoteOpponent(false);
+          // Already chose my picture (even before a refresh)? Then I am only waiting for the opponent.
+          const iChose = role === 'host' ? room.host?.isReady : room.guest?.isReady;
+          setIsWaitingForRemoteOpponent(Boolean(iChose));
           setGamePhase('CHOOSE_PICTURE_P1');
         } else if (room.phase === 'COUNTDOWN') {
           setIsWaitingForRemoteOpponent(false);
@@ -248,11 +369,19 @@ export default function App() {
         setPendingGuessRemote(null);
       } else if (event.type === 'MP_STATE' && event.room) {
         setMpRoom(event.room as unknown as MpRoomState);
-      } else if (event.type === 'MP_ROOM_CLOSED') {
+      } else if (event.type === 'MP_ROOM_CLOSED' || event.type === 'HOST_DISCONNECTED') {
         liveVoiceManager.stop();
         onlineService.disconnect();
         setMpRoom(null);
         setGamePhase('HOME');
+        setNotice(event.type === 'HOST_DISCONNECTED' ? 'HOST_LEFT' : 'ROOM_CLOSED');
+      } else if (event.type === 'RESUME_FAILED') {
+        // Our seat is gone (room finished / server restarted) while we were reconnecting.
+        liveVoiceManager.stop();
+        onlineService.disconnect();
+        setMpRoom(null);
+        setGamePhase('HOME');
+        setNotice('ROOM_GONE');
       } else if (event.type === 'VOICE_SIGNAL' && event.signal) {
         // One voice engine for every online mode; `from` is the other player's id.
         liveVoiceManager.handleSignal(String(event.from ?? event.fromRole), event.signal);
@@ -523,6 +652,7 @@ export default function App() {
   const handleBackToHome = () => {
     if (gameMode === 'ROOM_CODE') {
       onlineService.mpLeave();
+      onlineService.leaveRoom();
       onlineService.disconnect();
     }
     setMpRoom(null);
@@ -545,10 +675,43 @@ export default function App() {
     Boolean(player1.name) &&
     Boolean(player2.name);
 
+  if (isRestoring) {
+    return (
+      <div className="min-h-screen bg-[#070D1E] text-slate-100 flex items-center justify-center font-['Cairo',sans-serif]">
+        <div className="text-center space-y-3 animate-pulse">
+          <div className="w-10 h-10 mx-auto rounded-full border-4 border-amber-300/80 border-t-transparent animate-spin" />
+          <div className="text-sm font-black text-slate-200">
+            {lang === 'ar' ? 'جاري استعادة اللعبة...' : 'Restoring your game...'}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const noticeText =
+    notice === 'ROOM_GONE'
+      ? lang === 'ar' ? 'الغرفة انتهت أو السيرفر اتعمله إعادة تشغيل. ابدأ لعبة جديدة.' : 'That room is over (or the server restarted). Start a new game.'
+      : notice === 'HOST_LEFT'
+      ? lang === 'ar' ? 'صاحب الغرفة خرج من اللعبة.' : 'The host left the game.'
+      : notice === 'ROOM_CLOSED'
+      ? lang === 'ar' ? 'الغرفة اتقفلت.' : 'The room was closed.'
+      : null;
+
   return (
     <div className="min-h-screen bg-[#070D1E] text-slate-100 flex justify-center items-start sm:py-6 selection:bg-amber-400 selection:text-slate-900 font-['Cairo',sans-serif] relative overflow-x-hidden">
       {/* Subtle Atmospheric Ambient Glow (Deep Blue & Purple) */}
       <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[650px] h-[320px] bg-gradient-to-b from-blue-600/10 via-purple-600/5 to-transparent blur-3xl pointer-events-none" />
+
+      {noticeText && (
+        <div
+          role="status"
+          data-testid="app-notice"
+          onClick={() => setNotice(null)}
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-[90vw] px-4 py-2.5 rounded-2xl bg-amber-100 text-amber-900 border-2 border-amber-400 text-xs font-black shadow-xl cursor-pointer"
+        >
+          {noticeText}
+        </div>
+      )}
 
       {/* Main Mobile App Container */}
       <div className="w-full max-w-[440px] min-h-screen sm:min-h-[860px] game-bg sm:rounded-[36px] sm:shadow-2xl sm:border sm:border-slate-800/80 overflow-y-auto flex flex-col relative z-10">

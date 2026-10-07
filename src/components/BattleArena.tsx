@@ -4,6 +4,7 @@ import { sound } from '../utils/audio';
 import { isCorrectGuess } from '../utils/normalize';
 import { VoiceChatBar, useJoinVoice } from './VoiceChatBar';
 import { HiddenCard } from './HiddenCard';
+import { LOCAL_ARENA_KEY, loadLocalArena, saveLocalArena } from '../utils/gameStorage';
 import {
   Send,
   Check,
@@ -87,7 +88,12 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
   lang,
 }) => {
   const defaultViewer = isOnlineMatch ? (onlineRole === 'host' ? player1.id : player2.id) : activePlayerId;
-  const [viewerId, setViewerId] = useState<string>(defaultViewer);
+
+  // Same-device matches survive a page refresh: the question waiting for its answer, the phone-handoff
+  // screen and whose eyes are on the screen are restored (online matches are restored by the server).
+  const matchKey = `${roundNumber}|${player1.name}|${player2.name}`;
+  const [restoredArena] = useState(() => (isOnlineMatch ? null : loadLocalArena(matchKey)));
+  const [viewerId, setViewerId] = useState<string>(restoredArena?.viewerId ?? defaultViewer);
 
   // Question drafting
   const [questionInput, setQuestionInput] = useState<string>('');
@@ -100,14 +106,14 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
     audioData?: string;
     askedById: string;
     answeredById: string;
-  } | null>(null);
+  } | null>(restoredArena?.pending ?? null);
 
   // Answering controls: selected answer choice + optional note
   const [selectedAnswer, setSelectedAnswer] = useState<AnswerType | null>(null);
   const [answerNote, setAnswerNote] = useState<string>('');
 
   // Pass and Play Handover Interstitial
-  const [passAndPlayHandoff, setPassAndPlayHandoff] = useState<boolean>(false);
+  const [passAndPlayHandoff, setPassAndPlayHandoff] = useState<boolean>(restoredArena?.passAndPlayHandoff ?? false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Question History Bottom Sheet & Tabs
@@ -150,6 +156,25 @@ export const BattleArena: React.FC<BattleArenaProps> = ({
   const isMyTurnToAsk = isOnlineMatch
     ? (onlineRole === 'host' ? activePlayerId === player1.id : activePlayerId === player2.id) && !pendingQuestionRemote
     : viewerId === activePlayerId && !pendingQuestionLocal;
+
+  useEffect(() => {
+    if (isOnlineMatch) return;
+    // A bot answers its own timer: a question the human just asked the bot is simply asked again.
+    const pending = pendingQuestionLocal && !(isBotMatch && pendingQuestionLocal.askedById === player1.id) ? pendingQuestionLocal : null;
+    saveLocalArena({ matchKey, viewerId, passAndPlayHandoff, pending });
+  }, [isOnlineMatch, isBotMatch, matchKey, viewerId, passAndPlayHandoff, pendingQuestionLocal, player1.id]);
+
+  // Leaving the arena inside the app (round over, back to home) ends this entry; a page refresh keeps it.
+  useEffect(
+    () => () => {
+      try {
+        window.localStorage.removeItem(LOCAL_ARENA_KEY);
+      } catch {
+        // ignore
+      }
+    },
+    []
+  );
 
   // When a question arrives for ME to answer, bring the answer panel into view (the duel stage is tall on phones).
   const actionZoneRef = useRef<HTMLDivElement | null>(null);
